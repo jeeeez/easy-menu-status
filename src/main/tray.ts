@@ -62,7 +62,7 @@ export class TrayController {
       this.tray?.setTitle(trayMenu.title);
       this.tray?.setToolTip(trayMenu.description);
       const menus: MenuItemConstructorOptions[] = trayMenu.menus.map((item) => {
-        const value = execSync(item.command).toString().trim();
+        const value = this.getOutputFromCommand(item.command);
         const maxValueLength = item.maxValueLength || 50;
         const valueInLabel =
           value.length > maxValueLength
@@ -74,7 +74,7 @@ export class TrayController {
           click: () => {
             this.updateValues();
             const newValue = item.updateWhenClicking
-              ? execSync(item.command).toString().trim()
+              ? this.getOutputFromCommand(item.command)
               : value;
             pbcopy(newValue);
           },
@@ -112,6 +112,14 @@ export class TrayController {
         description: 'Click to copy.',
         menus: [],
       };
+    }
+  }
+
+  getOutputFromCommand(command: string): string {
+    try {
+      return execSync(command).toString().trim();
+    } catch (error: any) {
+      return error.message;
     }
   }
 }
