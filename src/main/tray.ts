@@ -1,14 +1,31 @@
-import { app, Menu, Tray, nativeImage } from 'electron';
+import {
+  app,
+  Menu,
+  Tray,
+  nativeImage,
+  MenuItemConstructorOptions,
+} from 'electron';
 import { execSync } from 'node:child_process';
 import { spawn } from 'child_process';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { TrayMenuWindow } from './windows/tray-menu-window';
+// import { TrayMenuWindow } from './windows/tray-menu-window';
 
 function pbcopy(data: string) {
   const proc = spawn('pbcopy');
   proc.stdin.write(data);
   proc.stdin.end();
+}
+
+interface TrayMenuConfig {
+  title: string;
+  description: string;
+  menus: {
+    label: string;
+    command: string;
+    maxValueLength?: number;
+    updateWhenClicking?: boolean;
+  }[];
 }
 
 export class TrayController {
@@ -28,8 +45,9 @@ export class TrayController {
       .whenReady()
       .then(() => {
         this.tray = new Tray(nativeImage.createEmpty());
-        this.tray.setTitle(`Code`);
-        this.tray.setToolTip('Click to copy.');
+        const trayMenu = this.loadTrayMenu();
+        this.tray.setTitle(trayMenu.title);
+        this.tray.setToolTip(trayMenu.description);
         this.tray.on('click', () => {
           this.updateValues();
         });
@@ -40,12 +58,18 @@ export class TrayController {
 
   updateValues() {
     try {
-      const trayMenu = JSON.parse(readFileSync(TrayController.PATH, 'utf-8'));
-      this.tray?.setTitle(trayMenu.title || 'Code');
-      const menus = trayMenu.menus.map((item) => {
+      const trayMenu = this.loadTrayMenu();
+      this.tray?.setTitle(trayMenu.title);
+      this.tray?.setToolTip(trayMenu.description);
+      const menus: MenuItemConstructorOptions[] = trayMenu.menus.map((item) => {
         const value = execSync(item.command).toString().trim();
+        const maxValueLength = item.maxValueLength || 50;
+        const valueInLabel =
+          value.length > maxValueLength
+            ? value.slice(0, maxValueLength)
+            : value;
         return {
-          label: `${item.label}: ${value}`,
+          label: `${item.label}: ${valueInLabel}`,
           type: 'normal',
           click: () => {
             this.updateValues();
@@ -60,7 +84,7 @@ export class TrayController {
         label: 'Edit',
         type: 'normal',
         click: async () => {
-          execSync(`open -a "Visual Studio Code" ${TrayController.PATH}`);
+          execSync(`open ${TrayController.PATH}`);
           // await TrayMenuWindow.instance().init();
           // TrayMenuWindow.instance().window?.webContents.executeJavaScript(
           //   `window.config = ${JSON.stringify(trayMenu)};
@@ -72,6 +96,22 @@ export class TrayController {
       this.tray?.setContextMenu(Menu.buildFromTemplate(menus));
     } catch (error) {
       console.error(error);
+    }
+  }
+
+  loadTrayMenu(): TrayMenuConfig {
+    try {
+      const trayMenu = JSON.parse(readFileSync(TrayController.PATH, 'utf-8'));
+      trayMenu.title = trayMenu.title || 'Code';
+      trayMenu.description = trayMenu.description || 'Click to copy.';
+      trayMenu.menus = trayMenu.menus || [];
+      return trayMenu;
+    } catch (error) {
+      return {
+        title: 'Code',
+        description: 'Click to copy.',
+        menus: [],
+      };
     }
   }
 }
