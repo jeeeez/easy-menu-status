@@ -21,7 +21,6 @@ export class TrayController {
     }
     return TrayController.$instance;
   }
-  count = 0;
   tray: Tray | null = null;
 
   constructor() {
@@ -41,9 +40,8 @@ export class TrayController {
 
   updateValues() {
     try {
-      this.count += 1;
-      this.tray?.setTitle(`Code`);
       const trayMenu = JSON.parse(readFileSync(TrayController.PATH, 'utf-8'));
+      this.tray?.setTitle(trayMenu.title || 'Code');
       const menus = trayMenu.menus.map((item) => {
         const value = execSync(item.command).toString().trim();
         return {
