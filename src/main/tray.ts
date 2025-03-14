@@ -9,6 +9,7 @@ import { execSync } from 'node:child_process';
 import { spawn } from 'child_process';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { WindowManager } from './windows/window-manager';
 // import { TrayMenuWindow } from './windows/tray-menu-window';
 
 function pbcopy(data: string) {
@@ -25,6 +26,8 @@ interface TrayMenuConfig {
     command: string;
     maxValueLength?: number;
     updateWhenClicking?: boolean;
+    type?: string;
+    url?: string;
   }[];
 }
 
@@ -62,16 +65,25 @@ export class TrayController {
       this.tray?.setTitle(trayMenu.title);
       this.tray?.setToolTip(trayMenu.description);
       const menus: MenuItemConstructorOptions[] = trayMenu.menus.map((item) => {
-        const value = this.getOutputFromCommand(item.command);
-        const maxValueLength = item.maxValueLength || 50;
-        const valueInLabel =
-          value.length > maxValueLength
-            ? value.slice(0, maxValueLength)
-            : value;
+        let { label } = item;
+        let value = '';
+        if (item.type !== 'browser-window') {
+          value = this.getOutputFromCommand(item.command);
+          const maxValueLength = item.maxValueLength || 50;
+          const valueInLabel =
+            value.length > maxValueLength
+              ? value.slice(0, maxValueLength)
+              : value;
+          label = `${item.label}: ${valueInLabel}`;
+        }
         return {
-          label: `${item.label}: ${valueInLabel}`,
+          label,
           type: 'normal',
           click: () => {
+            if (item.type === 'browser-window' && item.url) {
+              WindowManager.instance(item.label).init(item.url);
+              return;
+            }
             this.updateValues();
             const newValue = item.updateWhenClicking
               ? this.getOutputFromCommand(item.command)
@@ -85,12 +97,6 @@ export class TrayController {
         type: 'normal',
         click: async () => {
           execSync(`open ${TrayController.PATH}`);
-          // await TrayMenuWindow.instance().init();
-          // TrayMenuWindow.instance().window?.webContents.executeJavaScript(
-          //   `window.config = ${JSON.stringify(trayMenu)};
-          //    window.forceUpdate();
-          //   `,
-          // );
         },
       });
       this.tray?.setContextMenu(Menu.buildFromTemplate(menus));
