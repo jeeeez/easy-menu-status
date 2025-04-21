@@ -4,13 +4,13 @@ import {
   Tray,
   nativeImage,
   MenuItemConstructorOptions,
+  NativeImage,
 } from 'electron';
 import { execSync } from 'node:child_process';
 import { spawn } from 'child_process';
 import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import path, { resolve } from 'node:path';
 import { WindowManager } from './windows/window-manager';
-// import { TrayMenuWindow } from './windows/tray-menu-window';
 
 function pbcopy(data: string) {
   const proc = spawn('pbcopy');
@@ -18,17 +18,37 @@ function pbcopy(data: string) {
   proc.stdin.end();
 }
 
+interface BaseMenuItem {
+  label: string;
+  command?: string;
+  maxLabelLength?: number;
+}
+
+interface BrowserWindowMenuItem extends BaseMenuItem {
+  type: 'browser-window';
+  url: string;
+}
+
+interface CopyValueMenuItem extends BaseMenuItem {
+  type: 'copy-value';
+  value: string;
+}
+interface ExecuteCommandMenuItem extends BaseMenuItem {
+  type: 'execute-command';
+  command: string;
+  value: string;
+}
+
+type MenuItem =
+  | BrowserWindowMenuItem
+  | CopyValueMenuItem
+  | ExecuteCommandMenuItem;
+
 interface TrayMenuConfig {
+  icon: NativeImage;
   title: string;
   description: string;
-  menus: {
-    label: string;
-    command: string;
-    maxValueLength?: number;
-    updateWhenClicking?: boolean;
-    type?: string;
-    url?: string;
-  }[];
+  menus: MenuItem[];
 }
 
 export class TrayController {
@@ -46,58 +66,36 @@ export class TrayController {
   constructor() {
     app
       .whenReady()
-      .then(() => {
-        this.tray = new Tray(nativeImage.createEmpty());
-        const trayMenu = this.loadTrayMenu();
+      .then(async () => {
+        const trayMenu = await this.parseMenuConfig();
+        this.tray = new Tray(trayMenu.icon);
         this.tray.setTitle(trayMenu.title);
         this.tray.setToolTip(trayMenu.description);
+
         this.tray.on('click', () => {
-          this.updateValues();
+          this.updateMenuValues();
         });
-        this.updateValues();
+        await this.updateMenuValues();
       })
       .catch(() => undefined);
   }
 
-  updateValues() {
+  async updateMenuValues() {
     try {
-      const trayMenu = this.loadTrayMenu();
+      const trayMenu = await this.parseMenuConfig();
+      this.tray?.setImage(trayMenu.icon);
       this.tray?.setTitle(trayMenu.title);
       this.tray?.setToolTip(trayMenu.description);
       const menus: MenuItemConstructorOptions[] = trayMenu.menus.map((item) => {
-        let { label } = item;
-        let value = '';
-        if (item.type !== 'browser-window') {
-          value = this.getOutputFromCommand(item.command);
-          const maxValueLength = item.maxValueLength || 50;
-          const valueInLabel =
-            value.length > maxValueLength
-              ? value.slice(0, maxValueLength)
-              : value;
-          label = `${item.label}: ${valueInLabel}`;
-        }
+        const { labelValue, commandValue } = this.calculateMenuLabel(item);
         return {
-          label,
+          label: labelValue,
           type: 'normal',
           click: () => {
-            if (item.type === 'browser-window' && item.url) {
-              WindowManager.instance(item.label).init(item.url);
-              return;
-            }
-            this.updateValues();
-            const newValue = item.updateWhenClicking
-              ? this.getOutputFromCommand(item.command)
-              : value;
-            pbcopy(newValue);
+            this.updateMenuValues();
+            this.executeClickEvent(item, commandValue);
           },
         };
-      });
-      menus.push({
-        label: 'Edit',
-        type: 'normal',
-        click: async () => {
-          execSync(`open ${TrayController.PATH}`);
-        },
       });
       this.tray?.setContextMenu(Menu.buildFromTemplate(menus));
     } catch (error) {
@@ -105,17 +103,22 @@ export class TrayController {
     }
   }
 
-  loadTrayMenu(): TrayMenuConfig {
+  async parseMenuConfig(): Promise<TrayMenuConfig> {
     try {
       const trayMenu = JSON.parse(readFileSync(TrayController.PATH, 'utf-8'));
-      trayMenu.title = trayMenu.title || 'Code';
-      trayMenu.description = trayMenu.description || 'Click to copy.';
+      const title = trayMenu.icon
+        ? trayMenu.title
+        : trayMenu.title || 'Untitled';
+      trayMenu.title = title;
+      trayMenu.description = trayMenu.description || '';
       trayMenu.menus = trayMenu.menus || [];
+      trayMenu.icon = await this.calculateTrayIcon(trayMenu.icon);
       return trayMenu;
-    } catch (error) {
+    } catch (error: any) {
       return {
-        title: 'Code',
-        description: 'Click to copy.',
+        icon: nativeImage.createEmpty(),
+        title: 'Error',
+        description: error.message,
         menus: [],
       };
     }
@@ -126,6 +129,77 @@ export class TrayController {
       return execSync(command).toString().trim();
     } catch (error: any) {
       return error.message;
+    }
+  }
+
+  async calculateTrayIcon(
+    icon: string | { name: string; width: number; height: number },
+  ) {
+    try {
+      if (icon) {
+        const iconName = typeof icon === 'string' ? icon : icon.name;
+        const iconPath = iconName.startsWith('/')
+          ? iconName
+          : path.resolve(process.resourcesPath, `assets/icons/${iconName}.svg`);
+        const size =
+          typeof icon === 'string'
+            ? { width: 16, height: 16 }
+            : { width: icon.width, height: icon.height };
+
+        return await nativeImage.createThumbnailFromPath(iconPath, size);
+      }
+      return nativeImage.createEmpty();
+    } catch (error) {
+      return nativeImage.createEmpty();
+    }
+  }
+
+  calculateMenuLabel(item: MenuItem) {
+    const { label, command, maxLabelLength = 50 } = item;
+
+    if (label.includes('{{CommandValue}}') && command) {
+      const commandValue = this.getOutputFromCommand(command);
+      const labelValue = label
+        .replace(/\{\{CommandValue\}\}/g, commandValue)
+        .slice(0, maxLabelLength);
+      return {
+        labelValue,
+        commandValue,
+      };
+    }
+
+    return {
+      labelValue: label.slice(0, maxLabelLength),
+      commandValue: '',
+    };
+  }
+
+  executeClickEvent(item: MenuItem, CommandValueInLabel: string) {
+    if (item.type === 'browser-window' && item.url) {
+      WindowManager.instance(item.label).init(item.url);
+      return;
+    }
+
+    if (item.type === 'execute-command' && item.command) {
+      this.getOutputFromCommand(item.command);
+      return;
+    }
+
+    if (item.type === 'copy-value') {
+      const valueTemplate = item.value || '';
+      let newValue = valueTemplate;
+      if (newValue.includes('{{CommandValue}}') && item.command) {
+        const commandValue = this.getOutputFromCommand(item.command);
+        newValue = newValue.replace(/\{\{CommandValue\}\}/g, commandValue);
+      }
+      if (newValue.includes('{{CommandValueInLabel}}')) {
+        newValue = newValue.replace(
+          /\{\{CommandValueInLabel\}\}/g,
+          CommandValueInLabel,
+        );
+      }
+
+      pbcopy(newValue);
     }
   }
 }
