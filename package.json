@@ -14,7 +14,10 @@
   ],
   "repository": {
     "type": "git",
-    "url": "ssh://jeff@192.168.0.100:/volume1/Git-Repositories/easy-menu-status.git"
+    "url": "ssh://jeff@192.168.0.100:/volume1/Git-Repositories/easy-menu-status.git",
+    "from": {
+      "url": "https://github.com/electron-react-boilerplate/electron-react-boilerplate"
+    }
   },
   "license": "MIT",
   "author": {
@@ -62,7 +65,8 @@
     "electron-updater": "^6.1.4",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "react-router-dom": "^6.16.0"
+    "react-router-dom": "^6.16.0",
+    "strip-json-comments": "^5.0.1"
   },
   "devDependencies": {
     "@electron/rebuild": "^3.3.0",

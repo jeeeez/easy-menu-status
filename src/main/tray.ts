@@ -10,6 +10,7 @@ import { execSync } from 'node:child_process';
 import { spawn } from 'child_process';
 import { readFileSync } from 'node:fs';
 import path, { resolve } from 'node:path';
+import stripJsonComments from 'strip-json-comments';
 import { WindowManager } from './windows/window-manager';
 
 function pbcopy(data: string) {
@@ -17,6 +18,11 @@ function pbcopy(data: string) {
   proc.stdin.write(data);
   proc.stdin.end();
 }
+
+const resourcesPath =
+  process.env.NODE_ENV === 'development'
+    ? (process.env.PWD ?? '')
+    : process.resourcesPath;
 
 interface BaseMenuItem {
   label: string;
@@ -38,11 +44,15 @@ interface ExecuteCommandMenuItem extends BaseMenuItem {
   command: string;
   value: string;
 }
+interface QuitAppMenuItem extends BaseMenuItem {
+  type: 'quit-app';
+}
 
 type MenuItem =
   | BrowserWindowMenuItem
   | CopyValueMenuItem
-  | ExecuteCommandMenuItem;
+  | ExecuteCommandMenuItem
+  | QuitAppMenuItem;
 
 interface TrayMenuConfig {
   icon: NativeImage;
@@ -105,7 +115,11 @@ export class TrayController {
 
   async parseMenuConfig(): Promise<TrayMenuConfig> {
     try {
-      const trayMenu = JSON.parse(readFileSync(TrayController.PATH, 'utf-8'));
+      const jsonWithComments = readFileSync(TrayController.PATH, 'utf-8');
+      const jsonWithoutComments = stripJsonComments(jsonWithComments, {
+        trailingCommas: true,
+      });
+      const trayMenu = JSON.parse(jsonWithoutComments);
       const title = trayMenu.icon
         ? trayMenu.title
         : trayMenu.title || 'Untitled';
@@ -140,7 +154,7 @@ export class TrayController {
         const iconName = typeof icon === 'string' ? icon : icon.name;
         const iconPath = iconName.startsWith('/')
           ? iconName
-          : path.resolve(process.resourcesPath, `assets/icons/${iconName}.svg`);
+          : path.resolve(resourcesPath, `assets/icons/${iconName}.svg`);
         const size =
           typeof icon === 'string'
             ? { width: 16, height: 16 }
@@ -200,6 +214,11 @@ export class TrayController {
       }
 
       pbcopy(newValue);
+      return;
+    }
+
+    if (item.type === 'quit-app') {
+      app.quit();
     }
   }
 }
