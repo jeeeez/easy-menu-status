@@ -202,13 +202,13 @@ export class TrayController {
 
   executeClickEvent(item: MenuItem, CommandValueInLabel: string) {
     if (item.action === 'browser-window' && item.url) {
-      Logger.info(`Click '${item.label}', open ${item.url}`);
+      Logger.info(`Click '${item.label}', open '${item.url}'`);
       WindowManager.instance(item.label).init(item.url);
       return;
     }
 
     if (item.action === 'execute-command' && item.command) {
-      Logger.info(`Click '${item.label}', execute ${item.command}`);
+      Logger.info(`Click '${item.label}', execute '${item.command}'`);
       this.executeCommand(item.command);
       return;
     }
