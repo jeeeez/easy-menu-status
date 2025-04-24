@@ -8,10 +8,11 @@ import {
 } from 'electron';
 import { execSync } from 'node:child_process';
 import { spawn } from 'child_process';
-import { readFileSync } from 'node:fs';
+import { readFileSync, watchFile } from 'node:fs';
 import path, { resolve } from 'node:path';
 import stripJsonComments from 'strip-json-comments';
 import { WindowManager } from './windows/window-manager';
+import { Logger } from './utils/Logger';
 
 function pbcopy(data: string) {
   const proc = spawn('pbcopy');
@@ -28,31 +29,32 @@ interface BaseMenuItem {
   label: string;
   command?: string;
   maxLabelLength?: number;
+  type?: MenuItemConstructorOptions['type'];
 }
 
 interface BrowserWindowMenuItem extends BaseMenuItem {
-  type: 'browser-window';
+  action: 'browser-window';
   url: string;
 }
 
 interface CopyValueMenuItem extends BaseMenuItem {
-  type: 'copy-value';
+  action: 'copy-value';
   value: string;
 }
 interface ExecuteCommandMenuItem extends BaseMenuItem {
-  type: 'execute-command';
+  action: 'execute-command';
   command: string;
   value: string;
 }
 interface QuitAppMenuItem extends BaseMenuItem {
-  type: 'quit-app';
+  action: 'quit-app';
 }
 
 type MenuItem =
-  | BrowserWindowMenuItem
-  | CopyValueMenuItem
-  | ExecuteCommandMenuItem
-  | QuitAppMenuItem;
+  | (BrowserWindowMenuItem & { submenu: MenuItem[] })
+  | (CopyValueMenuItem & { submenu: MenuItem[] })
+  | (ExecuteCommandMenuItem & { submenu: MenuItem[] })
+  | (QuitAppMenuItem & { submenu: MenuItem[] });
 
 interface TrayMenuConfig {
   icon: NativeImage;
@@ -62,7 +64,7 @@ interface TrayMenuConfig {
 }
 
 export class TrayController {
-  static PATH = resolve(process.env.HOME ?? '', 'tray-menu.config.json');
+  static PATH = resolve(process.env.HOME ?? '', 'easy-tray.config.json');
   // eslint-disable-next-line no-use-before-define
   private static $instance: TrayController | null = null;
   static instance(): TrayController {
@@ -77,57 +79,50 @@ export class TrayController {
     app
       .whenReady()
       .then(async () => {
-        const trayMenu = await this.parseMenuConfig();
-        this.tray = new Tray(trayMenu.icon);
-        this.tray.setTitle(trayMenu.title);
-        this.tray.setToolTip(trayMenu.description);
-
-        this.tray.on('click', () => {
-          this.updateMenuValues();
+        await this.createOrUpdateTray();
+        watchFile(TrayController.PATH, { interval: 100 }, () => {
+          this.createOrUpdateTray();
+          Logger.info('Tray config file changed');
         });
-        await this.updateMenuValues();
       })
       .catch(() => undefined);
   }
 
-  async updateMenuValues() {
+  async createOrUpdateTray() {
     try {
-      const trayMenu = await this.parseMenuConfig();
-      this.tray?.setImage(trayMenu.icon);
-      this.tray?.setTitle(trayMenu.title);
-      this.tray?.setToolTip(trayMenu.description);
-      const menus: MenuItemConstructorOptions[] = trayMenu.menus.map((item) => {
-        const { labelValue, commandValue } = this.calculateMenuLabel(item);
-        return {
-          label: labelValue,
-          type: 'normal',
-          click: () => {
-            this.updateMenuValues();
-            this.executeClickEvent(item, commandValue);
-          },
-        };
-      });
+      if (!this.tray) {
+        this.tray = new Tray(nativeImage.createEmpty());
+        this.tray.on('click', () => {
+          this.createOrUpdateTray();
+          Logger.info('Clicked Tray');
+        });
+      }
+      const config = await this.parseTrayConfig();
+      this.tray?.setImage(config.icon);
+      this.tray?.setTitle(config.title);
+      this.tray?.setToolTip(config.description);
+      const menus: MenuItemConstructorOptions[] = config.menus.map((menu) =>
+        this.calculateMenu(menu),
+      );
       this.tray?.setContextMenu(Menu.buildFromTemplate(menus));
     } catch (error) {
       console.error(error);
     }
   }
 
-  async parseMenuConfig(): Promise<TrayMenuConfig> {
+  async parseTrayConfig(): Promise<TrayMenuConfig> {
     try {
       const jsonWithComments = readFileSync(TrayController.PATH, 'utf-8');
       const jsonWithoutComments = stripJsonComments(jsonWithComments, {
         trailingCommas: true,
       });
-      const trayMenu = JSON.parse(jsonWithoutComments);
-      const title = trayMenu.icon
-        ? trayMenu.title
-        : trayMenu.title || 'Untitled';
-      trayMenu.title = title;
-      trayMenu.description = trayMenu.description || '';
-      trayMenu.menus = trayMenu.menus || [];
-      trayMenu.icon = await this.calculateTrayIcon(trayMenu.icon);
-      return trayMenu;
+      const config = JSON.parse(jsonWithoutComments);
+      const title = config.icon ? config.title : config.title || 'Untitled';
+      config.title = title;
+      config.description = config.description || '';
+      config.menus = config.menus || [];
+      config.icon = await this.calculateTrayIcon(config.icon);
+      return config;
     } catch (error: any) {
       return {
         icon: nativeImage.createEmpty(),
@@ -168,6 +163,23 @@ export class TrayController {
     }
   }
 
+  calculateMenu(item: MenuItem): MenuItemConstructorOptions {
+    const { labelValue, commandValue } = this.calculateMenuLabel(item);
+    const type: MenuItemConstructorOptions['type'] = item.type ?? 'normal';
+    return {
+      label: labelValue,
+      type,
+      click:
+        type === 'normal'
+          ? () => {
+              this.createOrUpdateTray();
+              this.executeClickEvent(item, commandValue);
+            }
+          : undefined,
+      submenu: item.submenu?.map((subitem) => this.calculateMenu(subitem)),
+    };
+  }
+
   calculateMenuLabel(item: MenuItem) {
     const { label, command, maxLabelLength = 50 } = item;
 
@@ -189,17 +201,18 @@ export class TrayController {
   }
 
   executeClickEvent(item: MenuItem, CommandValueInLabel: string) {
-    if (item.type === 'browser-window' && item.url) {
+    Logger.info(`Clicked '${item.label}'`);
+    if (item.action === 'browser-window' && item.url) {
       WindowManager.instance(item.label).init(item.url);
       return;
     }
 
-    if (item.type === 'execute-command' && item.command) {
+    if (item.action === 'execute-command' && item.command) {
       this.getOutputFromCommand(item.command);
       return;
     }
 
-    if (item.type === 'copy-value') {
+    if (item.action === 'copy-value') {
       const valueTemplate = item.value || '';
       let newValue = valueTemplate;
       if (newValue.includes('{{CommandValue}}') && item.command) {
@@ -217,7 +230,7 @@ export class TrayController {
       return;
     }
 
-    if (item.type === 'quit-app') {
+    if (item.action === 'quit-app') {
       app.quit();
     }
   }
