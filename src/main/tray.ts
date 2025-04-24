@@ -133,7 +133,7 @@ export class TrayController {
     }
   }
 
-  getOutputFromCommand(command: string): string {
+  executeCommand(command: string): string {
     try {
       return execSync(command).toString().trim();
     } catch (error: any) {
@@ -184,7 +184,7 @@ export class TrayController {
     const { label, command, maxLabelLength = 50 } = item;
 
     if (label.includes('{{CommandValue}}') && command) {
-      const commandValue = this.getOutputFromCommand(command);
+      const commandValue = this.executeCommand(command);
       const labelValue = label
         .replace(/\{\{CommandValue\}\}/g, commandValue)
         .slice(0, maxLabelLength);
@@ -201,14 +201,15 @@ export class TrayController {
   }
 
   executeClickEvent(item: MenuItem, CommandValueInLabel: string) {
-    Logger.info(`Clicked '${item.label}'`);
     if (item.action === 'browser-window' && item.url) {
+      Logger.info(`Click '${item.label}', open ${item.url}`);
       WindowManager.instance(item.label).init(item.url);
       return;
     }
 
     if (item.action === 'execute-command' && item.command) {
-      this.getOutputFromCommand(item.command);
+      Logger.info(`Click '${item.label}', execute ${item.command}`);
+      this.executeCommand(item.command);
       return;
     }
 
@@ -216,7 +217,7 @@ export class TrayController {
       const valueTemplate = item.value || '';
       let newValue = valueTemplate;
       if (newValue.includes('{{CommandValue}}') && item.command) {
-        const commandValue = this.getOutputFromCommand(item.command);
+        const commandValue = this.executeCommand(item.command);
         newValue = newValue.replace(/\{\{CommandValue\}\}/g, commandValue);
       }
       if (newValue.includes('{{CommandValueInLabel}}')) {
@@ -226,11 +227,13 @@ export class TrayController {
         );
       }
 
+      Logger.info(`Click '${item.label}', copy '${newValue}'`);
       pbcopy(newValue);
       return;
     }
 
     if (item.action === 'quit-app') {
+      Logger.info(`Click '${item.label}', quit app.`);
       app.quit();
     }
   }
