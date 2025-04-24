@@ -85,7 +85,7 @@ export class TrayController {
           Logger.info('Tray config file changed');
         });
       })
-      .catch(() => undefined);
+      .catch((error) => Logger.error(error.message));
   }
 
   async createOrUpdateTray() {
@@ -105,8 +105,8 @@ export class TrayController {
         this.calculateMenu(menu),
       );
       this.tray?.setContextMenu(Menu.buildFromTemplate(menus));
-    } catch (error) {
-      console.error(error);
+    } catch (error: any) {
+      Logger.error(error.message);
     }
   }
 
@@ -124,6 +124,7 @@ export class TrayController {
       config.icon = await this.calculateTrayIcon(config.icon);
       return config;
     } catch (error: any) {
+      Logger.error(error.message);
       return {
         icon: nativeImage.createEmpty(),
         title: 'Error',
@@ -137,6 +138,7 @@ export class TrayController {
     try {
       return execSync(command).toString().trim();
     } catch (error: any) {
+      Logger.error(`Execute command '${command}' failed: ${error.message}`);
       return error.message;
     }
   }
@@ -158,7 +160,8 @@ export class TrayController {
         return await nativeImage.createThumbnailFromPath(iconPath, size);
       }
       return nativeImage.createEmpty();
-    } catch (error) {
+    } catch (error: any) {
+      Logger.error(error.message);
       return nativeImage.createEmpty();
     }
   }
