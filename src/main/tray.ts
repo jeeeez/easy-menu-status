@@ -74,13 +74,17 @@ export class TrayController {
     return TrayController.$instance;
   }
   tray: Tray | null = null;
+  trayMenu: Menu | null = null;
+  config: TrayMenuConfig | null = null;
 
   constructor() {
     app
       .whenReady()
       .then(async () => {
-        await this.createOrUpdateTray();
-        watchFile(TrayController.PATH, { interval: 100 }, () => {
+        await this.parseTrayConfig();
+        this.createOrUpdateTray();
+        watchFile(TrayController.PATH, { interval: 100 }, async () => {
+          await this.parseTrayConfig();
           this.createOrUpdateTray();
           Logger.info('Tray config file changed');
         });
@@ -88,29 +92,31 @@ export class TrayController {
       .catch((error) => Logger.error(error.message));
   }
 
-  async createOrUpdateTray() {
+  createOrUpdateTray() {
     try {
+      if (!this.config) {
+        return;
+      }
       if (!this.tray) {
         this.tray = new Tray(nativeImage.createEmpty());
-        this.tray.on('click', () => {
+        this.tray.addListener('click', () => {
           this.createOrUpdateTray();
-          Logger.info('Clicked Tray');
         });
       }
-      const config = await this.parseTrayConfig();
-      this.tray?.setImage(config.icon);
-      this.tray?.setTitle(config.title);
-      this.tray?.setToolTip(config.description);
-      const menus: MenuItemConstructorOptions[] = config.menus.map((menu) =>
-        this.calculateMenu(menu),
+      this.tray.setImage(this.config.icon);
+      this.tray.setTitle(this.config.title);
+      this.tray.setToolTip(this.config.description);
+      const menus: MenuItemConstructorOptions[] = this.config.menus.map(
+        (menu) => this.calculateMenu(menu),
       );
-      this.tray?.setContextMenu(Menu.buildFromTemplate(menus));
+      this.trayMenu = Menu.buildFromTemplate(menus);
+      this.tray.setContextMenu(this.trayMenu);
     } catch (error: any) {
       Logger.error(error.message);
     }
   }
 
-  async parseTrayConfig(): Promise<TrayMenuConfig> {
+  async parseTrayConfig() {
     try {
       const jsonWithComments = readFileSync(TrayController.PATH, 'utf-8');
       const jsonWithoutComments = stripJsonComments(jsonWithComments, {
@@ -122,10 +128,10 @@ export class TrayController {
       config.description = config.description || '';
       config.menus = config.menus || [];
       config.icon = await this.calculateTrayIcon(config.icon);
-      return config;
+      this.config = config;
     } catch (error: any) {
       Logger.error(error.message);
-      return {
+      this.config = {
         icon: nativeImage.createEmpty(),
         title: 'Error',
         description: error.message,
@@ -170,12 +176,12 @@ export class TrayController {
     const { labelValue, commandValue } = this.calculateMenuLabel(item);
     const type: MenuItemConstructorOptions['type'] = item.type ?? 'normal';
     return {
+      id: labelValue,
       label: labelValue,
       type,
       click:
         type === 'normal'
           ? () => {
-              this.createOrUpdateTray();
               this.executeClickEvent(item, commandValue);
             }
           : undefined,
