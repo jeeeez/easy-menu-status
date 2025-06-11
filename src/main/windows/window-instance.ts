@@ -1,15 +1,16 @@
 import { BrowserWindow } from 'electron';
 import { createWindow } from '../helpers/window';
-import { getScreenSize } from '../util';
+import { calculateWindowSize } from '../util';
+import { WindowSizeAlias } from '../types';
 
 export class WindowInstance {
   window: BrowserWindow | null = null;
   private $initPromise: Promise<BrowserWindow> | null = null;
 
-  async init(url: string) {
+  async init(url: string, size?: WindowSizeAlias) {
     if (!this.$initPromise) {
       this.$initPromise = createWindow(url, {
-        ...getScreenSize(),
+        ...calculateWindowSize(size),
       }).then((window) => {
         this.window = window;
         window.on('closed', () => {

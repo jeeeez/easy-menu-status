@@ -1,5 +1,6 @@
 {
   "name": "easy-menu-status",
+  "version": "1.0.0",
   "description": "A simple Electron app to show the status of the menu",
   "keywords": [
     "electron",

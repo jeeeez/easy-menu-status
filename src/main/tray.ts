@@ -13,6 +13,7 @@ import path, { resolve } from 'node:path';
 import stripJsonComments from 'strip-json-comments';
 import { WindowManager } from './windows/window-manager';
 import { Logger } from './utils/Logger';
+import { WindowSizeProp } from './types';
 
 function pbcopy(data: string) {
   const proc = spawn('pbcopy');
@@ -35,6 +36,7 @@ interface BaseMenuItem {
 interface BrowserWindowMenuItem extends BaseMenuItem {
   action: 'browser-window';
   url: string;
+  size?: WindowSizeProp;
 }
 
 interface CopyValueMenuItem extends BaseMenuItem {
@@ -212,7 +214,7 @@ export class TrayController {
   executeClickEvent(item: MenuItem, CommandValueInLabel: string) {
     if (item.action === 'browser-window' && item.url) {
       Logger.info(`Click '${item.label}', open '${item.url}'`);
-      WindowManager.instance(item.label).init(item.url);
+      WindowManager.instance(item.label).init(item.url, item.size);
       return;
     }
 

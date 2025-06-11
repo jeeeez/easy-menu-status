@@ -8,6 +8,7 @@ export const createWindow = async (
     width: number;
     height: number;
     icon: string;
+    fullscreen: boolean;
   }> = {},
 ): Promise<BrowserWindow> => {
   const RESOURCES_PATH = app.isPackaged
