@@ -16,8 +16,10 @@ import { Logger } from './utils/Logger';
 import { WindowSizeProp } from './types';
 
 function pbcopy(data: string) {
-  const proc = spawn('pbcopy');
-  proc.stdin.write(data);
+  const proc = spawn('pbcopy', [], {
+    env: { ...process.env, LANG: 'en_US.UTF-8' },
+  });
+  proc.stdin.write(data, 'utf8');
   proc.stdin.end();
 }
 
