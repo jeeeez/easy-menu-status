@@ -2,7 +2,10 @@ import {
   app,
   Menu,
   Tray,
+  BrowserWindow,
+  screen,
   nativeImage,
+  globalShortcut,
   MenuItemConstructorOptions,
   NativeImage,
 } from 'electron';
@@ -64,11 +67,13 @@ interface TrayMenuConfig {
   icon: NativeImage;
   title: string;
   description: string;
+  shortcut?: string;
   menus: MenuItem[];
 }
 
 export class TrayController {
   static PATH = resolve(process.env.HOME ?? '', 'easy-tray.config.json');
+  static DEFAULT_SHORTCUT = 'CommandOrControl+Shift+E';
   // eslint-disable-next-line no-use-before-define
   private static $instance: TrayController | null = null;
   static instance(): TrayController {
@@ -80,6 +85,7 @@ export class TrayController {
   tray: Tray | null = null;
   trayMenu: Menu | null = null;
   config: TrayMenuConfig | null = null;
+  private registeredShortcut: string | null = null;
 
   constructor() {
     app
@@ -94,6 +100,71 @@ export class TrayController {
         });
       })
       .catch((error) => Logger.error(error.message));
+    app.on('will-quit', () => globalShortcut.unregisterAll());
+  }
+
+  private updateShortcut(shortcut?: string) {
+    const target = shortcut || TrayController.DEFAULT_SHORTCUT;
+    if (target === this.registeredShortcut) {
+      return;
+    }
+    if (this.registeredShortcut) {
+      globalShortcut.unregister(this.registeredShortcut);
+      this.registeredShortcut = null;
+    }
+    try {
+      const ok = globalShortcut.register(target, () => {
+        this.popupCenteredMenu();
+      });
+      this.registeredShortcut = ok ? target : null;
+      Logger.info(
+        ok
+          ? `Shortcut registered: ${target}`
+          : `Shortcut register failed: ${target}`,
+      );
+    } catch (error: any) {
+      this.registeredShortcut = null;
+      Logger.error(`Register shortcut '${target}' failed: ${error.message}`);
+    }
+  }
+
+  private popupCenteredMenu() {
+    if (!this.trayMenu) {
+      return;
+    }
+    // A tray app has no BaseWindow, which Menu.popup() requires. Create a
+    // 1x1 transparent anchor window at the center of the active display,
+    // pop the menu over it, then destroy it once the menu closes.
+    const cursor = screen.getCursorScreenPoint();
+    const { x, y, width, height } =
+      screen.getDisplayNearestPoint(cursor).workArea;
+    const centerX = Math.round(x + width / 2);
+    const centerY = Math.round(y + height / 2);
+
+    const anchor = new BrowserWindow({
+      x: centerX,
+      y: centerY,
+      width: 1,
+      height: 1,
+      frame: false,
+      transparent: true,
+      show: false,
+      skipTaskbar: true,
+      hasShadow: false,
+      resizable: false,
+    });
+    anchor.showInactive();
+
+    this.trayMenu.popup({
+      window: anchor,
+      x: 0,
+      y: 0,
+      callback: () => {
+        if (!anchor.isDestroyed()) {
+          anchor.close();
+        }
+      },
+    });
   }
 
   createOrUpdateTray() {
@@ -115,6 +186,7 @@ export class TrayController {
       );
       this.trayMenu = Menu.buildFromTemplate(menus);
       this.tray.setContextMenu(this.trayMenu);
+      this.updateShortcut(this.config.shortcut);
     } catch (error: any) {
       Logger.error(error.message);
     }
