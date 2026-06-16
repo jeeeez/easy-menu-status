@@ -1,10 +1,9 @@
 import path from 'node:path';
 import { appendFile, writeFile, existsSync } from 'node:fs';
 
-const resourcesPath =
-  process.env.NODE_ENV === 'development'
-    ? (process.env.PWD ?? '')
-    : process.resourcesPath;
+const isDev = process.env.NODE_ENV === 'development';
+
+const resourcesPath = isDev ? (process.env.PWD ?? '') : process.resourcesPath;
 
 const noop = () => null;
 
@@ -23,6 +22,9 @@ const LogLevelMap = {
 export class Logger {
   static doLog(level: keyof typeof LogLevelMap, message: string) {
     const fullMessage = `${new Date().toISOString()} ${message}\n`;
+    if(isDev){
+      console[level](fullMessage);
+    }
     if (LogLevelMap[level]) {
       if (existsSync(LogLevelMap[level].path)) {
         appendFile(LogLevelMap[level].path, fullMessage, noop);
