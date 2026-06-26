@@ -133,17 +133,41 @@ export class TrayController {
       return;
     }
     // A tray app has no BaseWindow, which Menu.popup() requires. Create a
-    // 1x1 transparent anchor window at the center of the active display,
-    // pop the menu over it, then destroy it once the menu closes.
+    // 1x1 transparent anchor window over which the menu pops, then destroy it
+    // once the menu closes.
     const cursor = screen.getCursorScreenPoint();
     const { x, y, width, height } =
       screen.getDisplayNearestPoint(cursor).workArea;
-    const centerX = Math.round(x + width / 2);
-    const centerY = Math.round(y + height / 2);
+
+    // Electron does not expose a menu's rendered size before it opens, so
+    // estimate it from the items to offset the anchor and visually center the
+    // whole menu (not just its top-left corner). CJK glyphs are ~full-width.
+    const ROW_HEIGHT = 22;
+    const SEPARATOR_HEIGHT = 11;
+    const { items } = this.trayMenu;
+    const estHeight =
+      items.reduce(
+        (h, item) =>
+          h + (item.type === 'separator' ? SEPARATOR_HEIGHT : ROW_HEIGHT),
+        0,
+      ) + 8;
+    const isWide = (ch: string) =>
+      /[ᄀ-ᅟ⺀-꓏가-힣豈-﫿︰-﹏＀-｠￠-￦]/.test(
+        ch,
+      );
+    const labelWidth = (label: string) =>
+      [...label].reduce((w, ch) => w + (isWide(ch) ? 14 : 7.5), 0);
+    const estWidth = Math.min(
+      Math.max(0, ...items.map((item) => labelWidth(item.label || ''))) + 52,
+      Math.round(width * 0.9),
+    );
+
+    const anchorX = Math.round(x + (width - estWidth) / 2);
+    const anchorY = Math.round(y + (height - estHeight) / 2);
 
     const anchor = new BrowserWindow({
-      x: centerX,
-      y: centerY,
+      x: anchorX,
+      y: anchorY,
       width: 1,
       height: 1,
       frame: false,
