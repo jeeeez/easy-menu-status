@@ -1,14 +1,16 @@
-import React from 'react';
+import { QuickCommandPage } from './pages/QuickCommand';
 import { SettingPage } from './pages/Setting';
+import './App.css';
 
 const page = new URLSearchParams(window.location.search).get('page');
+document.body.dataset.page = page || 'home';
+
 export default function App() {
-  const forceUpdate = React.useReducer((x) => x + 1, 0)[1];
-  React.useEffect(() => {
-    (window as any).forceUpdate = forceUpdate;
-  }, [forceUpdate]);
   if (page === 'setting') {
     return <SettingPage />;
+  }
+  if (page === 'quick-command') {
+    return <QuickCommandPage />;
   }
   return <div>App</div>;
 }

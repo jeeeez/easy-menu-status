@@ -15,6 +15,7 @@ import log from 'electron-log';
 import MenuBuilder from './menu';
 import { resolveHtmlPath } from './util';
 import { TrayController } from './tray';
+import { LinkInterceptorController } from './link-interceptor';
 
 class AppUpdater {
   constructor() {
@@ -41,7 +42,9 @@ const isDebug =
   process.env.NODE_ENV === 'development' || process.env.DEBUG_PROD === 'true';
 
 if (isDebug) {
-  require('electron-debug')();
+  require('electron-debug')({
+    showDevTools: false,
+  });
 }
 
 const installExtensions = async () => {
@@ -57,6 +60,7 @@ const installExtensions = async () => {
     .catch(console.log);
 };
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const createWindow = async () => {
   if (isDebug) {
     await installExtensions();
@@ -117,6 +121,8 @@ const createWindow = async () => {
  * Add event listeners...
  */
 
+LinkInterceptorController.instance();
+
 app.on('window-all-closed', () => {
   // Respect the OSX convention of having the application in memory even
   // after all windows have been closed
@@ -128,6 +134,9 @@ app.on('window-all-closed', () => {
 app
   .whenReady()
   .then(() => {
+    if (process.platform === 'darwin') {
+      app.setActivationPolicy('accessory');
+    }
     // createWindow();
     // app.on('activate', () => {
     //   // On macOS it's common to re-create a window in the app when the

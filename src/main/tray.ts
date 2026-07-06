@@ -2,8 +2,6 @@ import {
   app,
   Menu,
   Tray,
-  BrowserWindow,
-  screen,
   nativeImage,
   globalShortcut,
   MenuItemConstructorOptions,
@@ -17,6 +15,11 @@ import stripJsonComments from 'strip-json-comments';
 import { WindowManager } from './windows/window-manager';
 import { Logger } from './utils/Logger';
 import { WindowSizeProp } from './types';
+import { QuickCommandConfig, QuickCommandController } from './quick-command';
+import {
+  LinkInterceptorConfig,
+  LinkInterceptorController,
+} from './link-interceptor';
 
 function pbcopy(data: string) {
   const proc = spawn('pbcopy', [], {
@@ -67,13 +70,13 @@ interface TrayMenuConfig {
   icon: NativeImage;
   title: string;
   description: string;
-  shortcut?: string;
+  quickCommand?: QuickCommandConfig;
+  linkInterceptor?: LinkInterceptorConfig;
   menus: MenuItem[];
 }
 
 export class TrayController {
   static PATH = resolve(process.env.HOME ?? '', 'easy-tray.config.json');
-  static DEFAULT_SHORTCUT = 'CommandOrControl+Shift+E';
   // eslint-disable-next-line no-use-before-define
   private static $instance: TrayController | null = null;
   static instance(): TrayController {
@@ -85,7 +88,6 @@ export class TrayController {
   tray: Tray | null = null;
   trayMenu: Menu | null = null;
   config: TrayMenuConfig | null = null;
-  private registeredShortcut: string | null = null;
 
   constructor() {
     app
@@ -101,94 +103,6 @@ export class TrayController {
       })
       .catch((error) => Logger.error(error.message));
     app.on('will-quit', () => globalShortcut.unregisterAll());
-  }
-
-  private updateShortcut(shortcut?: string) {
-    const target = shortcut || TrayController.DEFAULT_SHORTCUT;
-    if (target === this.registeredShortcut) {
-      return;
-    }
-    if (this.registeredShortcut) {
-      globalShortcut.unregister(this.registeredShortcut);
-      this.registeredShortcut = null;
-    }
-    try {
-      const ok = globalShortcut.register(target, () => {
-        this.popupCenteredMenu();
-      });
-      this.registeredShortcut = ok ? target : null;
-      Logger.info(
-        ok
-          ? `Shortcut registered: ${target}`
-          : `Shortcut register failed: ${target}`,
-      );
-    } catch (error: any) {
-      this.registeredShortcut = null;
-      Logger.error(`Register shortcut '${target}' failed: ${error.message}`);
-    }
-  }
-
-  private popupCenteredMenu() {
-    if (!this.trayMenu) {
-      return;
-    }
-    // A tray app has no BaseWindow, which Menu.popup() requires. Create a
-    // 1x1 transparent anchor window over which the menu pops, then destroy it
-    // once the menu closes.
-    const cursor = screen.getCursorScreenPoint();
-    const { x, y, width, height } =
-      screen.getDisplayNearestPoint(cursor).workArea;
-
-    // Electron does not expose a menu's rendered size before it opens, so
-    // estimate it from the items to offset the anchor and visually center the
-    // whole menu (not just its top-left corner). CJK glyphs are ~full-width.
-    const ROW_HEIGHT = 22;
-    const SEPARATOR_HEIGHT = 11;
-    const { items } = this.trayMenu;
-    const estHeight =
-      items.reduce(
-        (h, item) =>
-          h + (item.type === 'separator' ? SEPARATOR_HEIGHT : ROW_HEIGHT),
-        0,
-      ) + 8;
-    const isWide = (ch: string) =>
-      /[ᄀ-ᅟ⺀-꓏가-힣豈-﫿︰-﹏＀-｠￠-￦]/.test(
-        ch,
-      );
-    const labelWidth = (label: string) =>
-      [...label].reduce((w, ch) => w + (isWide(ch) ? 14 : 7.5), 0);
-    const estWidth = Math.min(
-      Math.max(0, ...items.map((item) => labelWidth(item.label || ''))) + 52,
-      Math.round(width * 0.9),
-    );
-
-    const anchorX = Math.round(x + (width - estWidth) / 2);
-    const anchorY = Math.round(y + (height - estHeight) / 2);
-
-    const anchor = new BrowserWindow({
-      x: anchorX,
-      y: anchorY,
-      width: 1,
-      height: 1,
-      frame: false,
-      transparent: true,
-      show: false,
-      skipTaskbar: true,
-      hasShadow: false,
-      resizable: false,
-    });
-    anchor.showInactive();
-
-    this.trayMenu.popup({
-      window: anchor,
-      x: 0,
-      y: 0,
-      callback: () => {
-        if (!anchor.isDestroyed()) {
-          anchor.close();
-        }
-      },
-    });
   }
 
   createOrUpdateTray() {
@@ -210,7 +124,6 @@ export class TrayController {
       );
       this.trayMenu = Menu.buildFromTemplate(menus);
       this.tray.setContextMenu(this.trayMenu);
-      this.updateShortcut(this.config.shortcut);
     } catch (error: any) {
       Logger.error(error.message);
     }
@@ -229,8 +142,12 @@ export class TrayController {
       config.menus = config.menus || [];
       config.icon = await this.calculateTrayIcon(config.icon);
       this.config = config;
+      QuickCommandController.instance().setConfig(config.quickCommand);
+      LinkInterceptorController.instance().setConfig(config.linkInterceptor);
     } catch (error: any) {
       Logger.error(error.message);
+      QuickCommandController.instance().setConfig({ enabled: false });
+      LinkInterceptorController.instance().setConfig({ enabled: false });
       this.config = {
         icon: nativeImage.createEmpty(),
         title: 'Error',

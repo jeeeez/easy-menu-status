@@ -139,6 +139,16 @@
     "appId": "org.erb.ElectronReact",
     "asar": true,
     "asarUnpack": "**\\*.{node,dll}",
+    "protocols": [
+      {
+        "name": "Web links",
+        "role": "Viewer",
+        "schemes": [
+          "http",
+          "https"
+        ]
+      }
+    ],
     "files": [
       "dist",
       "node_modules",
