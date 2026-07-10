@@ -22,7 +22,7 @@ const LogLevelMap = {
 export class Logger {
   static doLog(level: keyof typeof LogLevelMap, message: string) {
     const fullMessage = `${new Date().toISOString()} ${message}\n`;
-    if(isDev){
+    if (isDev) {
       console[level](fullMessage);
     }
     if (LogLevelMap[level]) {

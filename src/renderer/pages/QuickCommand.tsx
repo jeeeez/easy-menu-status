@@ -1,4 +1,10 @@
 import React from 'react';
+import {
+  DEFAULT_QUICK_COMMAND_THEME,
+  QuickCommandResolvedTheme,
+  getQuickCommandThemeCssVariables,
+  isQuickCommandPresetTheme,
+} from '../../shared/quick-command-theme';
 
 type QuickCommandAction =
   | 'web-search'
@@ -6,11 +12,12 @@ type QuickCommandAction =
   | 'copy-value'
   | 'execute-command'
   | 'open-chrome-profile'
+  | 'open-settings'
   | 'quit-app';
 
 interface QuickCommandEntry {
   name: string;
-  command: string;
+  label: string;
   aliases: string[];
   description?: string;
   action: QuickCommandAction;
@@ -20,49 +27,69 @@ interface QuickCommandEntry {
 interface QuickCommandViewConfig {
   shortcut: string;
   defaultCommand: string;
+  theme: QuickCommandResolvedTheme;
   commands: QuickCommandEntry[];
 }
 
 type QuickCommandStyle = React.CSSProperties & {
-  '--quick-command-tag-width': string;
+  [customProperty: `--${string}`]: string | number | undefined;
 };
 
-const COMMAND_TAG_MIN_WIDTH = 72;
-const COMMAND_TAG_MAX_WIDTH = 148;
-const COMMAND_TAG_CHARACTER_WIDTH = 10;
-const COMMAND_TAG_HORIZONTAL_SPACE = 36;
+const COMMAND_TAG_MIN_WIDTH = 64;
+const COMMAND_TAG_MAX_WIDTH = 136;
+const COMMAND_TAG_CHARACTER_WIDTH = 9;
+const COMMAND_TAG_HORIZONTAL_SPACE = 30;
+const previewTheme = new URLSearchParams(window.location.search).get('theme');
+const defaultPreviewTheme = isQuickCommandPresetTheme(previewTheme)
+  ? previewTheme
+  : DEFAULT_QUICK_COMMAND_THEME;
 
 const MATCH_SCORE = {
-  commandExact: 1000,
+  nameExact: 1000,
   aliasExact: 920,
-  nameExact: 880,
-  commandInputExtendsIdentifier: 860,
-  commandPrefix: 820,
+  labelExact: 880,
+  nameInputExtendsIdentifier: 860,
+  namePrefix: 820,
   aliasInputExtendsIdentifier: 780,
   aliasPrefix: 740,
-  namePrefix: 700,
-  nameWordPrefix: 660,
-  commandContains: 520,
+  labelPrefix: 700,
+  labelWordPrefix: 660,
+  nameContains: 520,
   aliasContains: 480,
-  nameContains: 420,
+  labelContains: 420,
+};
+
+const ACTION_LABELS: Record<QuickCommandAction, string> = {
+  'web-search': 'Search',
+  'browser-window': 'Open',
+  'copy-value': 'Copy',
+  'execute-command': 'Run',
+  'open-chrome-profile': 'Chrome',
+  'open-settings': 'Open',
+  'quit-app': 'Quit',
 };
 
 const DEFAULT_CONFIG: QuickCommandViewConfig = {
   shortcut: '',
   defaultCommand: 'g',
+  theme: {
+    name: defaultPreviewTheme,
+    preset: defaultPreviewTheme,
+    tokens: {},
+  },
   commands: [
     {
-      name: 'Google',
-      command: 'g',
+      name: 'g',
+      label: 'Google',
       aliases: ['google', 'web', 'search'],
-      description: 'Search',
+      description: 'Search the web',
       action: 'web-search',
     },
   ],
 };
 
 function getCommandIdentifiers(command: QuickCommandEntry) {
-  return [command.command, command.name, ...command.aliases]
+  return [command.name, ...command.aliases]
     .filter(Boolean)
     .map((identifier) => identifier.toLowerCase());
 }
@@ -152,14 +179,14 @@ function getCommandMatchScore(command: QuickCommandEntry, input: string) {
     return 0;
   }
 
-  const commandScore = getIdentifierMatchScore(
-    command.command.toLowerCase(),
+  const nameScore = getIdentifierMatchScore(
+    command.name.toLowerCase(),
     firstWordLower,
     {
-      exact: MATCH_SCORE.commandExact,
-      inputExtendsIdentifier: MATCH_SCORE.commandInputExtendsIdentifier,
-      prefix: MATCH_SCORE.commandPrefix,
-      contains: MATCH_SCORE.commandContains,
+      exact: MATCH_SCORE.nameExact,
+      inputExtendsIdentifier: MATCH_SCORE.nameInputExtendsIdentifier,
+      prefix: MATCH_SCORE.namePrefix,
+      contains: MATCH_SCORE.nameContains,
     },
   );
   const aliasScore = Math.max(
@@ -173,18 +200,18 @@ function getCommandMatchScore(command: QuickCommandEntry, input: string) {
       }),
     ),
   );
-  const nameScore = getIdentifierMatchScore(
-    command.name.toLowerCase(),
+  const labelScore = getIdentifierMatchScore(
+    command.label.toLowerCase(),
     firstWordLower,
     {
-      exact: MATCH_SCORE.nameExact,
-      prefix: MATCH_SCORE.namePrefix,
-      wordPrefix: MATCH_SCORE.nameWordPrefix,
-      contains: MATCH_SCORE.nameContains,
+      exact: MATCH_SCORE.labelExact,
+      prefix: MATCH_SCORE.labelPrefix,
+      wordPrefix: MATCH_SCORE.labelWordPrefix,
+      contains: MATCH_SCORE.labelContains,
     },
   );
 
-  return Math.max(commandScore, aliasScore, nameScore);
+  return Math.max(nameScore, aliasScore, labelScore);
 }
 
 function rankCommands(
@@ -218,15 +245,19 @@ function rankCommands(
 }
 
 function isCanonicalCommandInput(input: string, command: QuickCommandEntry) {
-  const { firstWordLower } = splitInput(input);
-  return firstWordLower === command.command.toLowerCase();
+  const normalizedInput = input.trim().toLowerCase();
+  const canonicalName = command.name.toLowerCase();
+  return (
+    normalizedInput === canonicalName ||
+    normalizedInput.startsWith(`${canonicalName} `)
+  );
 }
 
 function getCanonicalCommandQuery(input: string, command: QuickCommandEntry) {
   if (!isCanonicalCommandInput(input, command)) {
     return '';
   }
-  return splitInput(input).restInput;
+  return input.trim().slice(command.name.length).trim();
 }
 
 function getCommandCompletionMode(input: string, command: QuickCommandEntry) {
@@ -258,7 +289,7 @@ function getCommandCompletionMode(input: string, command: QuickCommandEntry) {
 
 function completeCommandInput(input: string, command: QuickCommandEntry) {
   const { trimmedInput, restInput } = splitInput(input);
-  const commandPrefix = command.command;
+  const commandPrefix = command.name;
   const completionMode = getCommandCompletionMode(input, command);
 
   if (!trimmedInput) {
@@ -288,7 +319,7 @@ function shouldCompleteCommandInput(input: string, command: QuickCommandEntry) {
 
 function getCommandTagWidth(commands: QuickCommandEntry[]) {
   const longestCommandLength = commands.reduce(
-    (longestLength, command) => Math.max(longestLength, command.command.length),
+    (longestLength, command) => Math.max(longestLength, command.name.length),
     0,
   );
   const contentWidth =
@@ -310,6 +341,7 @@ function isComposingInputEvent(event: React.KeyboardEvent<HTMLInputElement>) {
 }
 
 export function QuickCommandPage() {
+  const quickCommandBridge = window.electron?.quickCommand;
   const inputRef = React.useRef<HTMLInputElement>(null);
   const [input, setInput] = React.useState('');
   const [error, setError] = React.useState('');
@@ -338,24 +370,24 @@ export function QuickCommandPage() {
 
   React.useEffect(() => {
     document.title = 'Quick Command';
+    if (!quickCommandBridge) {
+      focusInput();
+      return undefined;
+    }
 
-    window.electron.quickCommand
+    quickCommandBridge
       .getConfig()
       .then(setConfig)
       .catch((loadError: Error) => setError(loadError.message));
-    const unsubscribeShow = window.electron.quickCommand.onShow(
-      (nextConfig) => {
-        setConfig(nextConfig);
-        setInput('');
-        setError('');
-        setSelectedIndex(0);
-        focusInput();
-      },
-    );
-    const unsubscribeConfigUpdate = window.electron.quickCommand.onConfigUpdate(
-      (nextConfig) => {
-        setConfig(nextConfig);
-      },
+    const unsubscribeShow = quickCommandBridge.onShow((nextConfig) => {
+      setConfig(nextConfig);
+      setInput('');
+      setError('');
+      setSelectedIndex(0);
+      focusInput();
+    });
+    const unsubscribeConfigUpdate = quickCommandBridge.onConfigUpdate(
+      (nextConfig) => setConfig(nextConfig),
     );
     focusInput();
 
@@ -363,17 +395,21 @@ export function QuickCommandPage() {
       unsubscribeShow();
       unsubscribeConfigUpdate();
     };
-  }, [focusInput]);
+  }, [focusInput, quickCommandBridge]);
 
   const executeInput = React.useCallback(
     async (nextInput: string) => {
-      const result = await window.electron.quickCommand.execute(nextInput);
+      if (!quickCommandBridge) {
+        setError('Commands can only run inside EasyTray');
+        return;
+      }
+      const result = await quickCommandBridge.execute(nextInput);
       if (!result.ok) {
         setError(result.error);
         focusInput();
       }
     },
-    [focusInput],
+    [focusInput, quickCommandBridge],
   );
 
   const visibleCommands = rankCommands(
@@ -389,13 +425,14 @@ export function QuickCommandPage() {
   const selectedCommand =
     fallbackCommands[selectedIndex] ?? fallbackCommands[0];
   const commandListKey = config.commands
-    .map((command) => command.command)
+    .map((command) => command.name)
     .join('\n');
-  const commandTagStyle = React.useMemo<QuickCommandStyle>(
+  const quickCommandStyle = React.useMemo<QuickCommandStyle>(
     () => ({
       '--quick-command-tag-width': `${getCommandTagWidth(config.commands)}px`,
+      ...getQuickCommandThemeCssVariables(config.theme.tokens),
     }),
-    [config.commands],
+    [config.commands, config.theme.tokens],
   );
 
   React.useEffect(() => {
@@ -410,7 +447,7 @@ export function QuickCommandPage() {
       }
 
       if (!command.requiresInput) {
-        executeInput(command.command);
+        executeInput(command.name);
         return;
       }
 
@@ -423,15 +460,15 @@ export function QuickCommandPage() {
       }
 
       if (!isCanonicalCommandInput(input, command)) {
-        executeInput(`${command.command} ${input.trim()}`);
+        executeInput(`${command.name} ${input.trim()}`);
         return;
       }
 
       const query = getCanonicalCommandQuery(input, command);
       if (!query) {
-        const commandInput = `${command.command} `;
+        const commandInput = `${command.name} `;
         setInput(commandInput);
-        setError(`Type input for ${command.name}`);
+        setError(`Type input for ${command.label}`);
         focusInputEnd(commandInput.length);
         return;
       }
@@ -442,7 +479,12 @@ export function QuickCommandPage() {
   );
 
   return (
-    <main className="quick-command-page">
+    <main
+      className="quick-command-page"
+      data-quick-command-theme={config.theme.preset}
+      data-quick-command-theme-name={config.theme.name}
+      style={quickCommandStyle}
+    >
       <section
         className={`quick-command-panel ${
           error ? 'quick-command-panel--error' : ''
@@ -472,7 +514,7 @@ export function QuickCommandPage() {
               }
 
               if (event.key === 'Escape') {
-                window.electron.quickCommand.hide();
+                quickCommandBridge?.hide();
               }
               if (event.key === 'ArrowDown' && fallbackCommands.length > 0) {
                 event.preventDefault();
@@ -497,7 +539,7 @@ export function QuickCommandPage() {
           />
         </div>
         <div className="quick-command-footer">
-          <div className="quick-command-engines" style={commandTagStyle}>
+          <div className="quick-command-engines">
             {fallbackCommands.map((command, index) => (
               <button
                 type="button"
@@ -505,15 +547,24 @@ export function QuickCommandPage() {
                 className={`quick-command-engine ${
                   index === selectedIndex ? 'quick-command-engine--active' : ''
                 }`}
-                key={command.command}
+                key={command.name}
                 onClick={() => selectCommand(command)}
                 onMouseEnter={() => setSelectedIndex(index)}
               >
-                <kbd>{command.command}</kbd>
-                <span>{command.name}</span>
-                {command.description ? (
-                  <small>{command.description}</small>
-                ) : null}
+                <kbd className="quick-command-engine-name">{command.name}</kbd>
+                <span className="quick-command-engine-content">
+                  <span className="quick-command-engine-label">
+                    {command.label}
+                  </span>
+                  {command.description ? (
+                    <small className="quick-command-engine-description">
+                      {command.description}
+                    </small>
+                  ) : null}
+                </span>
+                <span className="quick-command-engine-action">
+                  {ACTION_LABELS[command.action]}
+                </span>
               </button>
             ))}
           </div>

@@ -5,11 +5,17 @@ import type {
   QuickCommandResult,
   QuickCommandViewConfig,
 } from './quick-command';
+import type {
+  EasyTrayEditorConfig,
+  SettingsConfigResult,
+} from '../shared/config';
 
 export type Channels = 'quick-command:show' | 'quick-command:update-config';
 export type InvokeChannels =
   | 'quick-command:get-config'
-  | 'quick-command:execute';
+  | 'quick-command:execute'
+  | 'settings:get-config'
+  | 'settings:save-config';
 
 const electronHandler = {
   ipcRenderer: {
@@ -68,6 +74,19 @@ const electronHandler = {
       return () => {
         ipcRenderer.removeListener('quick-command:update-config', subscription);
       };
+    },
+  },
+  settings: {
+    load() {
+      return ipcRenderer.invoke(
+        'settings:get-config',
+      ) as Promise<SettingsConfigResult>;
+    },
+    save(config: EasyTrayEditorConfig) {
+      return ipcRenderer.invoke(
+        'settings:save-config',
+        config,
+      ) as Promise<SettingsConfigResult>;
     },
   },
 };

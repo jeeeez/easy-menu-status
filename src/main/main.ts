@@ -16,6 +16,7 @@ import MenuBuilder from './menu';
 import { resolveHtmlPath } from './util';
 import { TrayController } from './tray';
 import { LinkInterceptorController } from './link-interceptor';
+import { SettingsController } from './settings';
 
 class AppUpdater {
   constructor() {
@@ -116,6 +117,7 @@ const createWindow = async () => {
  */
 
 LinkInterceptorController.instance();
+SettingsController.instance();
 
 app.on('window-all-closed', () => {
   // Respect the OSX convention of having the application in memory even

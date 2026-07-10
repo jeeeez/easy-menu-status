@@ -12,12 +12,18 @@ import { execSync, spawn } from 'node:child_process';
 import { resolveHtmlPath } from './util';
 import { WindowSizeProp } from './types';
 import { WindowManager } from './windows/window-manager';
+import { TrayMenuWindow } from './windows/tray-menu-window';
 import { Logger } from './utils/Logger';
 import {
   ChromeProfileMapping,
   ChromeProfileRoutingConfig,
   openChromeProfileUrl,
 } from './chrome-profile';
+import {
+  QuickCommandCustomTheme,
+  QuickCommandResolvedTheme,
+  normalizeQuickCommandTheme,
+} from '../shared/quick-command-theme';
 
 type WebSearchOpenTarget = 'external' | 'browser-window';
 type QuickCommandAction =
@@ -26,6 +32,7 @@ type QuickCommandAction =
   | 'copy-value'
   | 'execute-command'
   | 'open-chrome-profile'
+  | 'open-settings'
   | 'quit-app';
 
 function pbcopy(data: string) {
@@ -47,6 +54,7 @@ export interface QuickCommandWebSearchEngine {
 
 export interface QuickCommandConfiguredCommand {
   name: string;
+  label: string;
   command?: string;
   aliases?: string[];
   description?: string;
@@ -55,7 +63,6 @@ export interface QuickCommandConfiguredCommand {
   openIn?: WebSearchOpenTarget;
   size?: WindowSizeProp;
   value?: string;
-  shellCommand?: string;
   chromePath?: string;
   defaultProfile?: string;
   profiles?: ChromeProfileMapping[];
@@ -67,6 +74,8 @@ export interface QuickCommandConfig {
   enabled?: boolean;
   shortcut?: string;
   defaultCommand?: string;
+  theme?: string;
+  themes?: Record<string, QuickCommandCustomTheme>;
   commands?: QuickCommandConfiguredCommand[];
   webSearch?: {
     enabled?: boolean;
@@ -83,7 +92,8 @@ interface NormalizedWebSearchEngine extends QuickCommandWebSearchEngine {
 
 interface NormalizedQuickCommandCommand {
   name: string;
-  command: string;
+  label: string;
+  command?: string;
   aliases: string[];
   description?: string;
   action: QuickCommandAction;
@@ -91,7 +101,6 @@ interface NormalizedQuickCommandCommand {
   openIn?: WebSearchOpenTarget;
   size?: WindowSizeProp;
   value?: string;
-  shellCommand?: string;
   chromePath?: string;
   defaultProfile?: string;
   profiles?: ChromeProfileMapping[];
@@ -103,15 +112,17 @@ interface NormalizedQuickCommandConfig {
   enabled: boolean;
   shortcut: string;
   defaultCommand: string;
+  theme: QuickCommandResolvedTheme;
   commands: NormalizedQuickCommandCommand[];
 }
 
 export interface QuickCommandViewConfig {
   shortcut: string;
   defaultCommand: string;
+  theme: QuickCommandResolvedTheme;
   commands: Array<{
     name: string;
-    command: string;
+    label: string;
     aliases: string[];
     description?: string;
     action: QuickCommandAction;
@@ -143,13 +154,13 @@ const DEFAULT_WEB_SEARCH_ENGINES: NormalizedWebSearchEngine[] = [
   },
 ];
 
-const ACTION_LABELS: Record<QuickCommandAction, string> = {
-  'web-search': 'Search',
-  'browser-window': 'Open',
-  'copy-value': 'Copy',
-  'execute-command': 'Run',
-  'open-chrome-profile': 'Chrome',
-  'quit-app': 'Quit',
+const SETTINGS_COMMAND: NormalizedQuickCommandCommand = {
+  name: 'settings',
+  label: 'Settings',
+  aliases: ['preferences', 'config'],
+  description: 'EasyTray preferences',
+  action: 'open-settings',
+  requiresInput: false,
 };
 
 export class QuickCommandController {
@@ -165,8 +176,8 @@ export class QuickCommandController {
   private window: BrowserWindow | null = null;
   private initPromise: Promise<BrowserWindow> | null = null;
   private registeredShortcut: string | null = null;
-  private dynamicNameTimer: ReturnType<typeof setInterval> | null = null;
-  private commandValueNameCache = new Map<
+  private dynamicLabelTimer: ReturnType<typeof setInterval> | null = null;
+  private commandValueLabelCache = new Map<
     string,
     {
       value: string;
@@ -185,12 +196,12 @@ export class QuickCommandController {
   }
 
   setConfig(config?: QuickCommandConfig) {
-    this.commandValueNameCache.clear();
+    this.commandValueLabelCache.clear();
     this.config = QuickCommandController.normalizeConfig(config);
     this.updateShortcut();
     if (this.window && !this.window.isDestroyed()) {
       this.window.webContents.send('quick-command:show', this.getViewConfig());
-      this.updateDynamicNameTimer();
+      this.updateDynamicLabelTimer();
     }
   }
 
@@ -210,6 +221,7 @@ export class QuickCommandController {
         : QuickCommandController.normalizeWebSearchCommands(config.webSearch);
     const commands = QuickCommandController.dedupeCommands([
       ...configuredCommands,
+      SETTINGS_COMMAND,
       ...webSearchCommands,
     ]);
     const firstCommand = commands[0];
@@ -217,10 +229,11 @@ export class QuickCommandController {
     return {
       enabled: config.enabled ?? true,
       shortcut: config.shortcut || DEFAULT_SHORTCUT,
+      theme: normalizeQuickCommandTheme(config.theme, config.themes),
       defaultCommand:
         config.defaultCommand ||
         config.webSearch?.defaultEngine ||
-        firstCommand?.command ||
+        firstCommand?.name ||
         '',
       commands,
     };
@@ -263,18 +276,23 @@ export class QuickCommandController {
   private static normalizeConfiguredCommand(
     command: QuickCommandConfiguredCommand,
   ): NormalizedQuickCommandCommand | null {
-    if (!command || !command.name || !command.action) {
+    if (!command || !command.name || !command.label || !command.action) {
+      return null;
+    }
+
+    const name = command.name.trim();
+    const label = command.label.trim();
+    if (!name || !label) {
       return null;
     }
 
     const normalizedCommand: NormalizedQuickCommandCommand = {
       ...command,
-      command:
-        command.command ||
-        command.name.toLowerCase().trim().replace(/\s+/g, '-'),
+      name,
+      label,
       aliases: command.aliases ?? [],
       openIn: command.openIn ?? 'external',
-      description: command.description || ACTION_LABELS[command.action],
+      description: command.description,
     };
 
     if (
@@ -286,7 +304,7 @@ export class QuickCommandController {
 
     if (
       normalizedCommand.action === 'execute-command' &&
-      !normalizedCommand.shellCommand
+      !normalizedCommand.command
     ) {
       return null;
     }
@@ -294,7 +312,7 @@ export class QuickCommandController {
     if (
       normalizedCommand.action === 'copy-value' &&
       !normalizedCommand.value &&
-      !normalizedCommand.shellCommand
+      !normalizedCommand.command
     ) {
       return null;
     }
@@ -314,11 +332,10 @@ export class QuickCommandController {
     engine: NormalizedWebSearchEngine,
   ): NormalizedQuickCommandCommand {
     return {
-      name: engine.name,
-      command: engine.command,
+      name: engine.command,
+      label: engine.name,
       aliases: engine.aliases,
       action: 'web-search',
-      description: ACTION_LABELS['web-search'],
       url: engine.url,
       openIn: engine.openIn,
       size: engine.size,
@@ -329,7 +346,7 @@ export class QuickCommandController {
   private static dedupeCommands(commands: NormalizedQuickCommandCommand[]) {
     const seen = new Set<string>();
     return commands.filter((command) => {
-      const key = command.command.toLowerCase();
+      const key = command.name.toLowerCase();
       if (seen.has(key)) {
         return false;
       }
@@ -342,9 +359,10 @@ export class QuickCommandController {
     return {
       shortcut: this.config.shortcut,
       defaultCommand: this.config.defaultCommand,
+      theme: this.config.theme,
       commands: this.config.commands.map((command) => ({
-        name: this.getViewCommandName(command),
-        command: command.command,
+        name: command.name,
+        label: this.getViewCommandLabel(command),
         aliases: command.aliases,
         description: command.description,
         action: command.action,
@@ -415,7 +433,7 @@ export class QuickCommandController {
     quickWindow.loadURL(resolveHtmlPath('index.html?page=quick-command'));
     quickWindow.on('blur', () => this.hide());
     quickWindow.on('closed', () => {
-      this.stopDynamicNameTimer();
+      this.stopDynamicLabelTimer();
       this.window = null;
       this.initPromise = null;
     });
@@ -472,11 +490,11 @@ export class QuickCommandController {
     quickWindow.moveTop();
     quickWindow.focus();
     quickWindow.webContents.send('quick-command:show', this.getViewConfig());
-    this.updateDynamicNameTimer();
+    this.updateDynamicLabelTimer();
   }
 
   hide() {
-    this.stopDynamicNameTimer();
+    this.stopDynamicLabelTimer();
     if (this.window && !this.window.isDestroyed()) {
       this.window.hide();
     }
@@ -492,7 +510,7 @@ export class QuickCommandController {
   }
 
   private getCommandIdentifiers(command: NormalizedQuickCommandCommand) {
-    return [command.command, command.name, ...command.aliases]
+    return [command.name, ...command.aliases]
       .filter(Boolean)
       .map((identifier) => identifier.toLowerCase());
   }
@@ -599,11 +617,11 @@ export class QuickCommandController {
   }
 
   private getCommandValueCacheKey(command: NormalizedQuickCommandCommand) {
-    return `${command.command.toLowerCase()}::${command.shellCommand || ''}`;
+    return `${command.name.toLowerCase()}::${command.command || ''}`;
   }
 
-  private getDynamicNameInterval(command: NormalizedQuickCommandCommand) {
-    if (!command.name.includes('{{CommandValue}}') || !command.shellCommand) {
+  private getDynamicLabelInterval(command: NormalizedQuickCommandCommand) {
+    if (!command.label.includes('{{CommandValue}}') || !command.command) {
       return 0;
     }
 
@@ -616,25 +634,25 @@ export class QuickCommandController {
       : DEFAULT_COMMAND_VALUE_UPDATE_INTERVAL;
   }
 
-  private getDynamicNameUpdateInterval() {
+  private getDynamicLabelUpdateInterval() {
     const intervals = this.config.commands
-      .map((command) => this.getDynamicNameInterval(command))
+      .map((command) => this.getDynamicLabelInterval(command))
       .filter((interval) => interval > 0);
 
     return intervals.length > 0 ? Math.min(...intervals) : 0;
   }
 
-  private stopDynamicNameTimer() {
-    if (this.dynamicNameTimer) {
-      clearInterval(this.dynamicNameTimer);
-      this.dynamicNameTimer = null;
+  private stopDynamicLabelTimer() {
+    if (this.dynamicLabelTimer) {
+      clearInterval(this.dynamicLabelTimer);
+      this.dynamicLabelTimer = null;
     }
   }
 
-  private updateDynamicNameTimer() {
-    this.stopDynamicNameTimer();
+  private updateDynamicLabelTimer() {
+    this.stopDynamicLabelTimer();
 
-    const updateInterval = this.getDynamicNameUpdateInterval();
+    const updateInterval = this.getDynamicLabelUpdateInterval();
     if (
       !updateInterval ||
       !this.window ||
@@ -644,13 +662,13 @@ export class QuickCommandController {
       return;
     }
 
-    this.dynamicNameTimer = setInterval(() => {
+    this.dynamicLabelTimer = setInterval(() => {
       if (
         !this.window ||
         this.window.isDestroyed() ||
         !this.window.isVisible()
       ) {
-        this.stopDynamicNameTimer();
+        this.stopDynamicLabelTimer();
         return;
       }
 
@@ -665,47 +683,47 @@ export class QuickCommandController {
     command: NormalizedQuickCommandCommand,
     query: string,
   ) {
-    if (!command.shellCommand) {
+    if (!command.command) {
       return '';
     }
 
     return this.runShellCommand(
-      this.applyTemplate(command.shellCommand, query, false),
+      this.applyTemplate(command.command, query, false),
     );
   }
 
-  private getViewCommandName(command: NormalizedQuickCommandCommand) {
-    if (!command.name.includes('{{CommandValue}}')) {
-      return command.name;
+  private getViewCommandLabel(command: NormalizedQuickCommandCommand) {
+    if (!command.label.includes('{{CommandValue}}')) {
+      return command.label;
     }
 
-    const updateInterval = this.getDynamicNameInterval(command);
+    const updateInterval = this.getDynamicLabelInterval(command);
     const cacheKey = this.getCommandValueCacheKey(command);
-    const cachedValue = this.commandValueNameCache.get(cacheKey);
+    const cachedValue = this.commandValueLabelCache.get(cacheKey);
     const now = Date.now();
     if (
       cachedValue &&
       (!updateInterval || now - cachedValue.updatedAt < updateInterval)
     ) {
-      return command.name.replace(/\{\{CommandValue\}\}/g, cachedValue.value);
+      return command.label.replace(/\{\{CommandValue\}\}/g, cachedValue.value);
     }
 
     try {
       const commandValue = this.getCommandValue(command, '');
-      this.commandValueNameCache.set(cacheKey, {
+      this.commandValueLabelCache.set(cacheKey, {
         value: commandValue,
         updatedAt: now,
       });
-      return command.name.replace(/\{\{CommandValue\}\}/g, commandValue);
+      return command.label.replace(/\{\{CommandValue\}\}/g, commandValue);
     } catch (error: any) {
       Logger.error(
-        `Resolve quick command name '${command.name}' failed: ${error.message}`,
+        `Resolve quick command label '${command.name}' failed: ${error.message}`,
       );
-      this.commandValueNameCache.set(cacheKey, {
+      this.commandValueLabelCache.set(cacheKey, {
         value: 'Error',
         updatedAt: now,
       });
-      return command.name.replace(/\{\{CommandValue\}\}/g, 'Error');
+      return command.label.replace(/\{\{CommandValue\}\}/g, 'Error');
     }
   }
 
@@ -721,7 +739,7 @@ export class QuickCommandController {
     query: string,
   ) {
     if (this.commandRequiresInput(command) && !query) {
-      throw new Error(`Type input for ${command.name}`);
+      throw new Error(`Type input for ${command.label}`);
     }
 
     if (command.action === 'web-search') {
@@ -731,7 +749,7 @@ export class QuickCommandController {
       Logger.info(`Quick command web search '${command.name}': ${query}`);
 
       if (command.openIn === 'browser-window') {
-        await WindowManager.instance(`Web Search: ${command.name}`).init(
+        await WindowManager.instance(`Web Search: ${command.label}`).init(
           url,
           command.size,
         );
@@ -746,7 +764,7 @@ export class QuickCommandController {
         this.buildUrl(command.url || '', query, false),
       );
       Logger.info(`Quick command open '${command.name}': ${url}`);
-      await WindowManager.instance(command.name).init(url, command.size);
+      await WindowManager.instance(command.label).init(url, command.size);
       return;
     }
 
@@ -763,13 +781,13 @@ export class QuickCommandController {
     }
 
     if (command.action === 'execute-command') {
-      const shellCommand = this.applyTemplate(
-        command.shellCommand || '',
+      const actionCommand = this.applyTemplate(
+        command.command || '',
         query,
         false,
       );
-      Logger.info(`Quick command execute '${command.name}': ${shellCommand}`);
-      this.runShellCommand(shellCommand);
+      Logger.info(`Quick command execute '${command.name}': ${actionCommand}`);
+      this.runShellCommand(actionCommand);
       return;
     }
 
@@ -782,6 +800,12 @@ export class QuickCommandController {
         command as ChromeProfileRoutingConfig,
         command.name,
       );
+      return;
+    }
+
+    if (command.action === 'open-settings') {
+      Logger.info(`Quick command open settings '${command.name}'`);
+      await TrayMenuWindow.instance().init();
       return;
     }
 

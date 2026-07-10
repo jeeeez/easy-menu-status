@@ -6,6 +6,19 @@ Start the app in the `dev` environment:
 npm start
 ```
 
+## Settings UI
+
+Open Quick Command and run `settings` to edit `~/easy-tray.config.json`
+without changing the file manually. The editor supports General, Quick
+Command, Commands, Web Search, Link Routing, Tray Menu, and Custom Themes
+settings. Use the Save button or `CommandOrControl+S` to apply changes
+immediately.
+
+Before each save, EasyTray copies the previous configuration to
+`~/easy-tray.config.json.bak` and then replaces the active file atomically.
+The settings editor writes standard JSON, so comments from the original file
+are not retained after saving.
+
 ## Quick Command
 
 Press `CommandOrControl+Shift+Space` to open the quick command window. By
@@ -24,10 +37,11 @@ default command, web search engines, and Alfred-style commands:
   "quickCommand": {
     "shortcut": "CommandOrControl+Shift+Space",
     "defaultCommand": "g",
+    "theme": "alfred-classic",
     "commands": [
       {
-        "name": "RingCentral",
-        "command": "rc",
+        "name": "rc",
+        "label": "RingCentral",
         "aliases": ["ringcentral"],
         "description": "Open",
         "action": "browser-window",
@@ -35,33 +49,33 @@ default command, web search engines, and Alfred-style commands:
         "size": "maximized"
       },
       {
-        "name": "Work Email",
-        "command": "email",
+        "name": "email",
+        "label": "Work Email",
         "description": "Copy",
         "action": "copy-value",
         "value": "jeff.li@ringcentral.com"
       },
       {
-        "name": "Okta: {{CommandValue}}",
-        "command": "okta",
+        "name": "OKta Code",
+        "label": "{{CommandValue}}",
         "aliases": ["otp", "totp", "code"],
         "description": "Copy",
         "action": "copy-value",
-        "shellCommand": "~/Tools/totp/bin/totp-darwin-amd64 rc",
+        "command": "~/Tools/totp/bin/totp-darwin-amd64 rc",
         "value": "{{CommandValue}}",
         "requiresInput": false,
         "autoUpdateInterval": 10000
       },
       {
-        "name": "Open Config",
-        "command": "config",
+        "name": "config",
+        "label": "Open Config",
         "description": "Run",
         "action": "execute-command",
-        "shellCommand": "open -a Cursor ~/easy-tray.config.json"
+        "command": "open -a Cursor ~/easy-tray.config.json"
       },
       {
-        "name": "Chrome Auto Profile",
-        "command": "chrome",
+        "name": "chrome",
+        "label": "Chrome Auto Profile",
         "aliases": ["c"],
         "description": "Chrome",
         "action": "open-chrome-profile",
@@ -78,8 +92,8 @@ default command, web search engines, and Alfred-style commands:
         ]
       },
       {
-        "name": "Jira FIJI",
-        "command": "fiji",
+        "name": "fiji",
+        "label": "Jira FIJI",
         "aliases": ["FIJI"],
         "description": "Jira",
         "action": "open-chrome-profile",
@@ -116,6 +130,78 @@ default command, web search engines, and Alfred-style commands:
 }
 ```
 
+Within `quickCommand.commands`, `name` is the canonical text entered in Quick
+Command, `label` is the primary result text, `description` is supporting text
+shown below the label, and `action` is shown at the right edge. For
+`copy-value` and `execute-command`, `command` contains the local shell command
+to run.
+
+### Quick Command Themes
+
+Set `quickCommand.theme` to any built-in theme:
+
+- `alfred-classic`: charcoal surfaces, warm input, and orange accents.
+- `macos-glass`: translucent light glass with macOS blue accents.
+- `spotlight-light`: opaque, bright Spotlight-style presentation.
+- `minimal-mono`: high-contrast monochrome with restrained geometry.
+- `neo-brutalism`: bold outlines, hard shadows, and vivid color blocks.
+- `fluent-mica`: soft Mica-like layers and Fluent blue accents.
+- `material-expressive`: warm surfaces, teal accents, and stronger motion.
+- `terminal`: compact monospace styling with green terminal highlights.
+- `catppuccin`: Catppuccin Mocha-inspired pastel dark palette.
+- `nord`: cool, low-saturation Nord palette.
+- `dracula`: dark Dracula-inspired palette with pink and cyan accents.
+
+Unknown theme names fall back to `alfred-classic`. To create a custom theme,
+add it to `quickCommand.themes`, inherit from a built-in preset, then select its
+name:
+
+```json
+{
+  "quickCommand": {
+    "theme": "work",
+    "themes": {
+      "work": {
+        "extends": "nord",
+        "tokens": {
+          "color.panel": "rgba(35, 40, 49, 0.96)",
+          "color.input": "#303846",
+          "color.accent": "#5bc0be",
+          "color.itemActive": "#3f4a5a",
+          "radius.panel": 10,
+          "radius.item": 6,
+          "density.itemHeight": 50,
+          "effect.blur": 28,
+          "motion.duration": 140
+        }
+      }
+    }
+  }
+}
+```
+
+Supported custom token groups:
+
+- `color.*`: `panel`, `panelRaised`, `input`, `inputFocus`, `inputText`,
+  `text`, `muted`, `border`, `accent`, `accentStrong`, `danger`, `item`,
+  `itemHover`, `itemActive`, `itemActiveText`, `tag`, `tagText`, `tagActive`,
+  `tagActiveText`, `placeholder`, `selection`, `icon`, and `iconGlyph`.
+- `radius.*`: `panel`, `input`, `item`, `tag`, and `icon`.
+- `border.*`: `panelWidth`, `inputWidth`, and `itemWidth`.
+- `density.*`: `itemHeight`, `inputMinHeight`, and `pagePadding`.
+- `typography.*`: `fontFamily`, `inputSize`, `inputWeight`, and `itemSize`.
+- `effect.*`: `blur`, `saturation`, `panelShadow`, `inputShadow`, and
+  `activeShadow`.
+- `motion.duration`: transition duration for interactive states.
+
+Numeric dimensions are interpreted as pixels, while numeric
+`motion.duration` values are interpreted as milliseconds. Unsupported tokens
+and unsafe CSS values are ignored.
+
+During development, built-in themes can be previewed without invoking an
+action at `http://localhost:1212/?page=quick-command&theme=nord`. Replace
+`nord` with any built-in theme ID.
+
 Supported command actions:
 
 - `web-search`: search with a configured URL.
@@ -123,6 +209,7 @@ Supported command actions:
 - `copy-value`: copy static or generated text to the clipboard.
 - `execute-command`: run a local shell command.
 - `open-chrome-profile`: open a URL with a Chrome profile selected by domain.
+- `open-settings`: open the EasyTray settings editor.
 - `quit-app`: quit EasyTray.
 
 When input matches a command by partial command text or alias, the first
@@ -133,7 +220,7 @@ typing `FIJI-103480` with the `fiji` command selected first becomes
 
 Use `{{query}}` or `{{encodedQuery}}` for URL-encoded text, and `{{rawQuery}}`
 for the unencoded input. For `copy-value`, `{{CommandValue}}` is the output of
-`shellCommand`; it can be used in `name` and `value`. When `name` contains
+`command`; it can be used in `label` and `value`. When `label` contains
 `{{CommandValue}}`, the displayed value refreshes every 10 seconds by default;
 set `autoUpdateInterval` in milliseconds to customize it, or `0` to disable
 periodic display refresh. Set `openIn` to `browser-window` on a `web-search`

@@ -18,10 +18,13 @@ export class TrayMenuWindow {
   async init() {
     if (!this.$initPromise) {
       this.$initPromise = createWindow('index.html?page=setting', {
-        width: 500,
-        height: 350,
+        width: 1120,
+        height: 760,
       }).then((window) => {
         this.window = window;
+        window.setTitle('EasyTray Settings');
+        window.setMinimumSize(900, 620);
+        window.setMenuBarVisibility(false);
         window.on('closed', () => {
           this.window = null;
           this.$initPromise = null;

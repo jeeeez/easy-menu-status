@@ -7,8 +7,6 @@ pids
 *.pid
 *.seed
 
-# Coverage directory used by tools like istanbul
-coverage
 .eslintcache
 
 # Dependency directory
