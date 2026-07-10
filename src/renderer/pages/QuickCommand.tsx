@@ -229,31 +229,37 @@ function getCanonicalCommandQuery(input: string, command: QuickCommandEntry) {
   return splitInput(input).restInput;
 }
 
-function isCommandIdentifierInput(input: string, command: QuickCommandEntry) {
+function getCommandCompletionMode(input: string, command: QuickCommandEntry) {
   const { firstWordLower } = splitInput(input);
   if (!firstWordLower) {
-    return false;
+    return null;
   }
 
-  return getCommandIdentifiers(command).some(
-    (identifier) =>
-      identifier === firstWordLower ||
-      identifier.startsWith(firstWordLower) ||
-      identifier.includes(firstWordLower) ||
+  const identifiers = getCommandIdentifiers(command);
+  if (
+    identifiers.some(
+      (identifier) =>
+        identifier === firstWordLower || identifier.startsWith(firstWordLower),
+    )
+  ) {
+    return 'replace-token';
+  }
+
+  if (
+    identifiers.some((identifier) =>
       inputStartsWithIdentifier(firstWordLower, identifier),
-  );
+    )
+  ) {
+    return 'prefix-input';
+  }
+
+  return null;
 }
 
 function completeCommandInput(input: string, command: QuickCommandEntry) {
-  const { trimmedInput, firstWordLower, restInput } = splitInput(input);
+  const { trimmedInput, restInput } = splitInput(input);
   const commandPrefix = command.command;
-  const identifiers = getCommandIdentifiers(command);
-  const identifierToken = identifiers.some(
-    (identifier) =>
-      identifier === firstWordLower ||
-      identifier.startsWith(firstWordLower) ||
-      identifier.includes(firstWordLower),
-  );
+  const completionMode = getCommandCompletionMode(input, command);
 
   if (!trimmedInput) {
     return `${commandPrefix} `;
@@ -263,7 +269,7 @@ function completeCommandInput(input: string, command: QuickCommandEntry) {
     return trimmedInput;
   }
 
-  if (identifierToken) {
+  if (completionMode === 'replace-token') {
     return restInput ? `${commandPrefix} ${restInput}` : `${commandPrefix} `;
   }
 
@@ -276,7 +282,7 @@ function shouldCompleteCommandInput(input: string, command: QuickCommandEntry) {
   return (
     !trimmedInput ||
     (!isCanonicalCommandInput(input, command) &&
-      isCommandIdentifierInput(input, command))
+      Boolean(getCommandCompletionMode(input, command)))
   );
 }
 
@@ -337,16 +343,26 @@ export function QuickCommandPage() {
       .getConfig()
       .then(setConfig)
       .catch((loadError: Error) => setError(loadError.message));
-    const unsubscribe = window.electron.quickCommand.onShow((nextConfig) => {
-      setConfig(nextConfig);
-      setInput('');
-      setError('');
-      setSelectedIndex(0);
-      focusInput();
-    });
+    const unsubscribeShow = window.electron.quickCommand.onShow(
+      (nextConfig) => {
+        setConfig(nextConfig);
+        setInput('');
+        setError('');
+        setSelectedIndex(0);
+        focusInput();
+      },
+    );
+    const unsubscribeConfigUpdate = window.electron.quickCommand.onConfigUpdate(
+      (nextConfig) => {
+        setConfig(nextConfig);
+      },
+    );
     focusInput();
 
-    return unsubscribe;
+    return () => {
+      unsubscribeShow();
+      unsubscribeConfigUpdate();
+    };
   }, [focusInput]);
 
   const executeInput = React.useCallback(
@@ -372,6 +388,9 @@ export function QuickCommandPage() {
   ).slice(0, 5);
   const selectedCommand =
     fallbackCommands[selectedIndex] ?? fallbackCommands[0];
+  const commandListKey = config.commands
+    .map((command) => command.command)
+    .join('\n');
   const commandTagStyle = React.useMemo<QuickCommandStyle>(
     () => ({
       '--quick-command-tag-width': `${getCommandTagWidth(config.commands)}px`,
@@ -381,7 +400,7 @@ export function QuickCommandPage() {
 
   React.useEffect(() => {
     setSelectedIndex(0);
-  }, [input, config.commands]);
+  }, [input, commandListKey]);
 
   const selectCommand = React.useCallback(
     (command?: QuickCommandEntry) => {

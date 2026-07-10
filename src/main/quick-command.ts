@@ -60,6 +60,7 @@ export interface QuickCommandConfiguredCommand {
   defaultProfile?: string;
   profiles?: ChromeProfileMapping[];
   requiresInput?: boolean;
+  autoUpdateInterval?: number;
 }
 
 export interface QuickCommandConfig {
@@ -95,6 +96,7 @@ interface NormalizedQuickCommandCommand {
   defaultProfile?: string;
   profiles?: ChromeProfileMapping[];
   requiresInput?: boolean;
+  autoUpdateInterval?: number;
 }
 
 interface NormalizedQuickCommandConfig {
@@ -129,6 +131,7 @@ export type QuickCommandResult =
 const DEFAULT_SHORTCUT = 'CommandOrControl+Shift+Space';
 const QUICK_COMMAND_WIDTH = 760;
 const QUICK_COMMAND_HEIGHT = 450;
+const DEFAULT_COMMAND_VALUE_UPDATE_INTERVAL = 10000;
 
 const DEFAULT_WEB_SEARCH_ENGINES: NormalizedWebSearchEngine[] = [
   {
@@ -162,6 +165,14 @@ export class QuickCommandController {
   private window: BrowserWindow | null = null;
   private initPromise: Promise<BrowserWindow> | null = null;
   private registeredShortcut: string | null = null;
+  private dynamicNameTimer: ReturnType<typeof setInterval> | null = null;
+  private commandValueNameCache = new Map<
+    string,
+    {
+      value: string;
+      updatedAt: number;
+    }
+  >();
   private config: NormalizedQuickCommandConfig =
     QuickCommandController.normalizeConfig();
 
@@ -174,10 +185,12 @@ export class QuickCommandController {
   }
 
   setConfig(config?: QuickCommandConfig) {
+    this.commandValueNameCache.clear();
     this.config = QuickCommandController.normalizeConfig(config);
     this.updateShortcut();
     if (this.window && !this.window.isDestroyed()) {
       this.window.webContents.send('quick-command:show', this.getViewConfig());
+      this.updateDynamicNameTimer();
     }
   }
 
@@ -330,7 +343,7 @@ export class QuickCommandController {
       shortcut: this.config.shortcut,
       defaultCommand: this.config.defaultCommand,
       commands: this.config.commands.map((command) => ({
-        name: command.name,
+        name: this.getViewCommandName(command),
         command: command.command,
         aliases: command.aliases,
         description: command.description,
@@ -402,6 +415,7 @@ export class QuickCommandController {
     quickWindow.loadURL(resolveHtmlPath('index.html?page=quick-command'));
     quickWindow.on('blur', () => this.hide());
     quickWindow.on('closed', () => {
+      this.stopDynamicNameTimer();
       this.window = null;
       this.initPromise = null;
     });
@@ -458,9 +472,11 @@ export class QuickCommandController {
     quickWindow.moveTop();
     quickWindow.focus();
     quickWindow.webContents.send('quick-command:show', this.getViewConfig());
+    this.updateDynamicNameTimer();
   }
 
   hide() {
+    this.stopDynamicNameTimer();
     if (this.window && !this.window.isDestroyed()) {
       this.window.hide();
     }
@@ -481,17 +497,48 @@ export class QuickCommandController {
       .map((identifier) => identifier.toLowerCase());
   }
 
+  private findExplicitCommand(input: string) {
+    const normalizedInput = input.toLowerCase();
+    let matched:
+      | {
+          command: NormalizedQuickCommandCommand;
+          identifier: string;
+        }
+      | undefined;
+
+    this.config.commands.forEach((command) => {
+      this.getCommandIdentifiers(command).forEach((identifier) => {
+        const normalizedIdentifier = identifier.trim();
+        if (
+          !normalizedIdentifier ||
+          (normalizedInput !== normalizedIdentifier &&
+            !normalizedInput.startsWith(`${normalizedIdentifier} `))
+        ) {
+          return;
+        }
+
+        if (
+          !matched ||
+          normalizedIdentifier.length > matched.identifier.length
+        ) {
+          matched = {
+            command,
+            identifier: normalizedIdentifier,
+          };
+        }
+      });
+    });
+
+    return matched;
+  }
+
   private resolveCommand(input: string) {
-    const words = input.split(/\s+/);
-    const firstWord = words[0]?.toLowerCase();
-    const matchedCommand = this.config.commands.find((command) =>
-      this.getCommandIdentifiers(command).includes(firstWord),
-    );
+    const matchedCommand = this.findExplicitCommand(input);
 
     if (matchedCommand) {
       return {
-        command: matchedCommand,
-        query: input.slice(words[0].length).trim(),
+        command: matchedCommand.command,
+        query: input.slice(matchedCommand.identifier.length).trim(),
         explicit: true,
       };
     }
@@ -551,6 +598,117 @@ export class QuickCommandController {
     }
   }
 
+  private getCommandValueCacheKey(command: NormalizedQuickCommandCommand) {
+    return `${command.command.toLowerCase()}::${command.shellCommand || ''}`;
+  }
+
+  private getDynamicNameInterval(command: NormalizedQuickCommandCommand) {
+    if (!command.name.includes('{{CommandValue}}') || !command.shellCommand) {
+      return 0;
+    }
+
+    if (command.autoUpdateInterval === 0) {
+      return 0;
+    }
+
+    return command.autoUpdateInterval && command.autoUpdateInterval > 0
+      ? command.autoUpdateInterval
+      : DEFAULT_COMMAND_VALUE_UPDATE_INTERVAL;
+  }
+
+  private getDynamicNameUpdateInterval() {
+    const intervals = this.config.commands
+      .map((command) => this.getDynamicNameInterval(command))
+      .filter((interval) => interval > 0);
+
+    return intervals.length > 0 ? Math.min(...intervals) : 0;
+  }
+
+  private stopDynamicNameTimer() {
+    if (this.dynamicNameTimer) {
+      clearInterval(this.dynamicNameTimer);
+      this.dynamicNameTimer = null;
+    }
+  }
+
+  private updateDynamicNameTimer() {
+    this.stopDynamicNameTimer();
+
+    const updateInterval = this.getDynamicNameUpdateInterval();
+    if (
+      !updateInterval ||
+      !this.window ||
+      this.window.isDestroyed() ||
+      !this.window.isVisible()
+    ) {
+      return;
+    }
+
+    this.dynamicNameTimer = setInterval(() => {
+      if (
+        !this.window ||
+        this.window.isDestroyed() ||
+        !this.window.isVisible()
+      ) {
+        this.stopDynamicNameTimer();
+        return;
+      }
+
+      this.window.webContents.send(
+        'quick-command:update-config',
+        this.getViewConfig(),
+      );
+    }, updateInterval);
+  }
+
+  private getCommandValue(
+    command: NormalizedQuickCommandCommand,
+    query: string,
+  ) {
+    if (!command.shellCommand) {
+      return '';
+    }
+
+    return this.runShellCommand(
+      this.applyTemplate(command.shellCommand, query, false),
+    );
+  }
+
+  private getViewCommandName(command: NormalizedQuickCommandCommand) {
+    if (!command.name.includes('{{CommandValue}}')) {
+      return command.name;
+    }
+
+    const updateInterval = this.getDynamicNameInterval(command);
+    const cacheKey = this.getCommandValueCacheKey(command);
+    const cachedValue = this.commandValueNameCache.get(cacheKey);
+    const now = Date.now();
+    if (
+      cachedValue &&
+      (!updateInterval || now - cachedValue.updatedAt < updateInterval)
+    ) {
+      return command.name.replace(/\{\{CommandValue\}\}/g, cachedValue.value);
+    }
+
+    try {
+      const commandValue = this.getCommandValue(command, '');
+      this.commandValueNameCache.set(cacheKey, {
+        value: commandValue,
+        updatedAt: now,
+      });
+      return command.name.replace(/\{\{CommandValue\}\}/g, commandValue);
+    } catch (error: any) {
+      Logger.error(
+        `Resolve quick command name '${command.name}' failed: ${error.message}`,
+      );
+      this.commandValueNameCache.set(cacheKey, {
+        value: 'Error',
+        updatedAt: now,
+      });
+      return command.name.replace(/\{\{CommandValue\}\}/g, 'Error');
+    }
+  }
+
   private commandRequiresInput(command: NormalizedQuickCommandCommand) {
     if (typeof command.requiresInput === 'boolean') {
       return command.requiresInput;
@@ -593,11 +751,7 @@ export class QuickCommandController {
     }
 
     if (command.action === 'copy-value') {
-      const commandValue = command.shellCommand
-        ? this.runShellCommand(
-            this.applyTemplate(command.shellCommand, query, false),
-          )
-        : '';
+      const commandValue = this.getCommandValue(command, query);
       const valueTemplate = command.value || commandValue || query;
       const value = this.applyTemplate(valueTemplate, query, false).replace(
         /\{\{CommandValue\}\}/g,

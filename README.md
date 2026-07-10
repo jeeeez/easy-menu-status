@@ -42,6 +42,17 @@ default command, web search engines, and Alfred-style commands:
         "value": "jeff.li@ringcentral.com"
       },
       {
+        "name": "Okta: {{CommandValue}}",
+        "command": "okta",
+        "aliases": ["otp", "totp", "code"],
+        "description": "Copy",
+        "action": "copy-value",
+        "shellCommand": "~/Tools/totp/bin/totp-darwin-amd64 rc",
+        "value": "{{CommandValue}}",
+        "requiresInput": false,
+        "autoUpdateInterval": 10000
+      },
+      {
         "name": "Open Config",
         "command": "config",
         "description": "Run",
@@ -122,8 +133,11 @@ typing `FIJI-103480` with the `fiji` command selected first becomes
 
 Use `{{query}}` or `{{encodedQuery}}` for URL-encoded text, and `{{rawQuery}}`
 for the unencoded input. For `copy-value`, `{{CommandValue}}` is the output of
-`shellCommand`. Set `openIn` to `browser-window` on a `web-search` command to
-open results inside EasyTray instead of the default browser.
+`shellCommand`; it can be used in `name` and `value`. When `name` contains
+`{{CommandValue}}`, the displayed value refreshes every 10 seconds by default;
+set `autoUpdateInterval` in milliseconds to customize it, or `0` to disable
+periodic display refresh. Set `openIn` to `browser-window` on a `web-search`
+command to open results inside EasyTray instead of the default browser.
 
 For `open-chrome-profile`, input URLs without a protocol automatically get
 `https://` added. For example, `chrome app.ringcentral.com` opens
@@ -165,6 +179,12 @@ When enabled, a system click on `app.ringcentral.com` is routed through EasyTray
 and opened in Chrome with the matched profile. Links without a matched domain use
 `defaultProfile`. Development builds skip default-browser registration; use the
 packaged app for real system link interception.
+
+Local file targets are also supported when they reach EasyTray. For example,
+`chrome /Users/me/Documents/report.html` and a macOS `open-file` event are
+forwarded to Chrome with `defaultProfile`. Registering EasyTray as the default
+browser only covers `http` and `https`; macOS still chooses handlers for raw
+files by file type, so it does not make EasyTray the default app for every file.
 
 ## Packaging for Production
 

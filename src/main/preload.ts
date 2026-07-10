@@ -6,7 +6,7 @@ import type {
   QuickCommandViewConfig,
 } from './quick-command';
 
-export type Channels = 'ipc-example' | 'quick-command:show';
+export type Channels = 'quick-command:show' | 'quick-command:update-config';
 export type InvokeChannels =
   | 'quick-command:get-config'
   | 'quick-command:execute';
@@ -56,6 +56,17 @@ const electronHandler = {
 
       return () => {
         ipcRenderer.removeListener('quick-command:show', subscription);
+      };
+    },
+    onConfigUpdate(func: (config: QuickCommandViewConfig) => void) {
+      const subscription = (
+        _event: IpcRendererEvent,
+        config: QuickCommandViewConfig,
+      ) => func(config);
+      ipcRenderer.on('quick-command:update-config', subscription);
+
+      return () => {
+        ipcRenderer.removeListener('quick-command:update-config', subscription);
       };
     },
   },

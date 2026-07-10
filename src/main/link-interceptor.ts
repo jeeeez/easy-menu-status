@@ -17,6 +17,11 @@ interface NormalizedLinkInterceptorConfig extends ChromeProfileRoutingConfig {
 
 const URL_PROTOCOLS = ['http', 'https'];
 
+interface PendingTarget {
+  input: string;
+  sourceName: string;
+}
+
 export class LinkInterceptorController {
   // eslint-disable-next-line no-use-before-define
   private static $instance: LinkInterceptorController | null = null;
@@ -30,12 +35,16 @@ export class LinkInterceptorController {
   private config: NormalizedLinkInterceptorConfig =
     LinkInterceptorController.normalizeConfig();
   private configLoaded = false;
-  private pendingUrls: string[] = [];
+  private pendingTargets: PendingTarget[] = [];
 
   private constructor() {
     app.on('open-url', (event, url) => {
       event.preventDefault();
-      this.handleUrl(url);
+      this.handleTarget(url, 'System link');
+    });
+    app.on('open-file', (event, filePath) => {
+      event.preventDefault();
+      this.handleTarget(filePath, 'System file');
     });
   }
 
@@ -43,7 +52,7 @@ export class LinkInterceptorController {
     this.config = LinkInterceptorController.normalizeConfig(config);
     this.configLoaded = true;
     this.updateDefaultProtocolClients();
-    this.flushPendingUrls();
+    this.flushPendingTargets();
   }
 
   private static normalizeConfig(
@@ -78,27 +87,29 @@ export class LinkInterceptorController {
     });
   }
 
-  private flushPendingUrls() {
-    const pendingUrls = [...this.pendingUrls];
-    this.pendingUrls = [];
-    pendingUrls.forEach((url) => this.handleUrl(url));
+  private flushPendingTargets() {
+    const pendingTargets = [...this.pendingTargets];
+    this.pendingTargets = [];
+    pendingTargets.forEach(({ input, sourceName }) =>
+      this.handleTarget(input, sourceName),
+    );
   }
 
-  private handleUrl(url: string) {
+  private handleTarget(input: string, sourceName: string) {
     if (!this.configLoaded) {
-      this.pendingUrls.push(url);
+      this.pendingTargets.push({ input, sourceName });
       return;
     }
 
     if (!this.config.enabled) {
-      Logger.info(`Link interceptor disabled, ignored ${url}`);
+      Logger.info(`Link interceptor disabled, ignored ${input}`);
       return;
     }
 
     try {
-      openChromeProfileUrl(url, this.config, 'System link');
+      openChromeProfileUrl(input, this.config, sourceName);
     } catch (error: any) {
-      Logger.error(`System link route failed: ${error.message}`);
+      Logger.error(`${sourceName} route failed: ${error.message}`);
     }
   }
 }

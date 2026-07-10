@@ -1,4 +1,7 @@
 import { spawn } from 'node:child_process';
+import { homedir } from 'node:os';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { Logger } from './utils/Logger';
 
 export interface ChromeProfileMapping {
@@ -25,9 +28,22 @@ export function normalizeHttpUrl(url: string) {
 
 export function normalizeInputUrl(input: string) {
   const trimmedInput = input.trim();
+  const filePath = trimmedInput.startsWith('~/')
+    ? path.join(homedir(), trimmedInput.slice(2))
+    : trimmedInput;
+
+  if (path.isAbsolute(filePath)) {
+    return pathToFileURL(filePath).toString();
+  }
+
   const url = /^[a-z][a-z\d+\-.]*:\/\//i.test(trimmedInput)
     ? trimmedInput
     : `https://${trimmedInput}`;
+
+  if (new URL(url).protocol === 'file:') {
+    return new URL(url).toString();
+  }
+
   return normalizeHttpUrl(url);
 }
 
@@ -67,12 +83,16 @@ export function openChromeProfileUrl(
   const profile = resolveChromeProfile(hostname, config);
 
   if (!profile) {
-    throw new Error(`No Chrome profile matched ${hostname}`);
+    throw new Error(
+      hostname
+        ? `No Chrome profile matched ${hostname}`
+        : 'No Chrome profile configured for local files',
+    );
   }
 
   const chromePath = config.chromePath || DEFAULT_CHROME_PATH;
   Logger.info(
-    `Chrome profile route '${sourceName}': ${hostname} -> ${profile}`,
+    `Chrome profile route '${sourceName}': ${hostname || 'local file'} -> ${profile}`,
   );
   const chromeProcess = spawn(
     chromePath,
