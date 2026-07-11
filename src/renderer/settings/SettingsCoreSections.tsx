@@ -9,9 +9,10 @@ import {
   QuickCommandPresetTheme,
 } from '../../shared/quick-command-theme';
 import {
+  BrowserProfilesEditor,
   ComboField,
+  DomainProfilesEditor,
   NumberField,
-  ProfilesEditor,
   SelectField,
   TextField,
   ToggleField,
@@ -197,6 +198,7 @@ export function QuickCommandSettingsSection({
   onChange,
 }: ConfigSectionProps) {
   const quickCommand = config.quickCommand ?? {};
+  const appSearch = quickCommand.appSearch ?? {};
   const customThemes = quickCommand.themes ?? {};
   const selectedTheme = quickCommand.theme ?? DEFAULT_QUICK_COMMAND_THEME;
   const defaultCommandOptions = getDefaultCommandOptions(quickCommand);
@@ -216,6 +218,13 @@ export function QuickCommandSettingsSection({
           checked={quickCommand.enabled}
           label="Enabled"
           onChange={(enabled) => updateQuickCommand({ enabled })}
+        />
+        <ToggleField
+          checked={appSearch.enabled}
+          label="Search applications"
+          onChange={(enabled) =>
+            updateQuickCommand({ appSearch: { ...appSearch, enabled } })
+          }
         />
         <div className="settings-field-grid">
           <TextField
@@ -291,54 +300,77 @@ export function QuickCommandSettingsSection({
   );
 }
 
-export function LinkRoutingSettingsSection({
+export function OpenInBrowserSettingsSection({
   config,
   onChange,
 }: ConfigSectionProps) {
-  const linkInterceptor = config.linkInterceptor ?? {};
-  const updateLinkInterceptor = (patch: Partial<typeof linkInterceptor>) =>
+  const quickCommand = config.quickCommand ?? {};
+  const openInBrowser = quickCommand.openInBrowser ?? {};
+  const profiles = openInBrowser.profiles ?? [];
+  const profileOptions = profiles
+    .map((profile) => ({
+      id: profile.id.trim(),
+      name: profile.name.trim(),
+    }))
+    .filter((profile) => profile.id && profile.name);
+  const updateOpenInBrowser = (patch: Partial<typeof openInBrowser>) =>
     onChange({
       ...config,
-      linkInterceptor: { ...linkInterceptor, ...patch },
+      quickCommand: {
+        ...quickCommand,
+        openInBrowser: { ...openInBrowser, ...patch },
+      },
     });
+  const defaultProfileId = openInBrowser.defaultProfileId ?? '';
 
   return (
     <div className="settings-section">
       <div className="settings-section-heading">
-        <h2>Link Routing</h2>
+        <h2>Open in Browser</h2>
       </div>
       <div className="settings-form settings-form--narrow">
         <ToggleField
-          checked={linkInterceptor.enabled}
-          label="Enabled"
-          onChange={(enabled) => updateLinkInterceptor({ enabled })}
-        />
-        <ToggleField
-          checked={linkInterceptor.registerAsDefaultBrowser}
-          label="Register as default browser"
-          onChange={(registerAsDefaultBrowser) =>
-            updateLinkInterceptor({ registerAsDefaultBrowser })
+          checked={openInBrowser.interceptSystemLinks}
+          label="Intercept system links"
+          onChange={(interceptSystemLinks) =>
+            updateOpenInBrowser({ interceptSystemLinks })
           }
         />
-        <div className="settings-field-grid">
-          <TextField
-            label="Default Chrome profile"
-            placeholder="Profile 1"
-            value={linkInterceptor.defaultProfile}
-            onChange={(defaultProfile) =>
-              updateLinkInterceptor({ defaultProfile })
-            }
-          />
-          <TextField
-            label="Chrome path"
-            placeholder="/Applications/Google Chrome.app/..."
-            value={linkInterceptor.chromePath}
-            onChange={(chromePath) => updateLinkInterceptor({ chromePath })}
-          />
-        </div>
-        <ProfilesEditor
-          profiles={linkInterceptor.profiles}
-          onChange={(profiles) => updateLinkInterceptor({ profiles })}
+        <ToggleField
+          checked={openInBrowser.registerAsDefaultBrowser}
+          label="Register as default browser"
+          onChange={(registerAsDefaultBrowser) =>
+            updateOpenInBrowser({ registerAsDefaultBrowser })
+          }
+        />
+        <SelectField
+          label="Default profile"
+          options={[
+            { label: 'Select profile', value: '' },
+            ...(defaultProfileId &&
+            !profileOptions.some((profile) => profile.id === defaultProfileId)
+              ? [{ label: defaultProfileId, value: defaultProfileId }]
+              : []),
+            ...profileOptions.map((profile) => ({
+              label: profile.name,
+              value: profile.id,
+            })),
+          ]}
+          value={defaultProfileId}
+          onChange={(nextDefaultProfileId) =>
+            updateOpenInBrowser({ defaultProfileId: nextDefaultProfileId })
+          }
+        />
+        <BrowserProfilesEditor
+          profiles={profiles}
+          onChange={(nextProfiles) =>
+            updateOpenInBrowser({ profiles: nextProfiles })
+          }
+        />
+        <DomainProfilesEditor
+          domainProfiles={openInBrowser.domainProfiles}
+          profileOptions={profileOptions}
+          onChange={(domainProfiles) => updateOpenInBrowser({ domainProfiles })}
         />
       </div>
     </div>

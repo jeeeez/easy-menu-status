@@ -1,6 +1,9 @@
 import {
+  BUILT_IN_GOOGLE_WEB_SEARCH_ENGINE,
+  BUILT_IN_GOOGLE_WEB_SEARCH_ENGINE_ID,
   EasyTrayEditorConfig,
   MenuItemEditorConfig,
+  WebSearchEngineEditorConfig,
 } from '../../shared/config';
 import { DEFAULT_QUICK_COMMAND_THEME } from '../../shared/quick-command-theme';
 
@@ -51,30 +54,59 @@ export function createUniqueName(baseName: string, existingNames: string[]) {
   return `${baseName}-${suffix}`;
 }
 
+function normalizeWebSearchEngines(
+  engines: WebSearchEngineEditorConfig[] | undefined,
+) {
+  const configuredEngines = Array.isArray(engines) ? engines : [];
+  if (
+    configuredEngines.some(
+      (engine) => engine.id === BUILT_IN_GOOGLE_WEB_SEARCH_ENGINE_ID,
+    )
+  ) {
+    return configuredEngines;
+  }
+
+  const legacyGoogleIndex = configuredEngines.findIndex((engine) => {
+    const command = engine.command?.trim().toLowerCase();
+    const name = engine.name.trim().toLowerCase();
+    const url = engine.url.trim().toLowerCase();
+    return command === 'g' && (name === 'google' || url.includes('google.'));
+  });
+  if (legacyGoogleIndex >= 0) {
+    return configuredEngines.map((engine, index) =>
+      index === legacyGoogleIndex
+        ? { ...engine, id: BUILT_IN_GOOGLE_WEB_SEARCH_ENGINE_ID }
+        : engine,
+    );
+  }
+
+  return [
+    {
+      ...BUILT_IN_GOOGLE_WEB_SEARCH_ENGINE,
+      aliases: [...(BUILT_IN_GOOGLE_WEB_SEARCH_ENGINE.aliases ?? [])],
+    },
+    ...configuredEngines,
+  ];
+}
+
 export function normalizeEditorConfig(config: EasyTrayEditorConfig) {
+  const normalizedConfig = { ...config };
+  delete normalizedConfig.linkInterceptor;
   const quickCommand = config.quickCommand ?? {};
+  const appSearch = quickCommand.appSearch ?? {};
+  const openInBrowser = quickCommand.openInBrowser ?? {};
   const webSearch = quickCommand.webSearch ?? {};
-  const linkInterceptor = config.linkInterceptor ?? {};
   const icon =
     typeof config.icon === 'string'
       ? { name: config.icon, width: 16, height: 16 }
       : { name: '', width: 16, height: 16, ...(config.icon ?? {}) };
 
   return {
-    ...config,
+    ...normalizedConfig,
     icon,
     title: config.title ?? '',
     description: config.description ?? '',
     menus: Array.isArray(config.menus) ? config.menus : [],
-    linkInterceptor: {
-      ...linkInterceptor,
-      enabled: linkInterceptor.enabled ?? false,
-      registerAsDefaultBrowser:
-        linkInterceptor.registerAsDefaultBrowser ?? false,
-      profiles: Array.isArray(linkInterceptor.profiles)
-        ? linkInterceptor.profiles
-        : [],
-    },
     quickCommand: {
       ...quickCommand,
       enabled: quickCommand.enabled ?? true,
@@ -85,11 +117,28 @@ export function normalizeEditorConfig(config: EasyTrayEditorConfig) {
       commands: Array.isArray(quickCommand.commands)
         ? quickCommand.commands
         : [],
+      appSearch: {
+        ...appSearch,
+        enabled: appSearch.enabled ?? true,
+      },
+      openInBrowser: {
+        ...openInBrowser,
+        interceptSystemLinks: openInBrowser.interceptSystemLinks ?? false,
+        registerAsDefaultBrowser:
+          openInBrowser.registerAsDefaultBrowser ?? false,
+        defaultProfileId: openInBrowser.defaultProfileId ?? '',
+        profiles: Array.isArray(openInBrowser.profiles)
+          ? openInBrowser.profiles
+          : [],
+        domainProfiles: Array.isArray(openInBrowser.domainProfiles)
+          ? openInBrowser.domainProfiles
+          : [],
+      },
       webSearch: {
         ...webSearch,
         enabled: webSearch.enabled ?? true,
         defaultEngine: webSearch.defaultEngine ?? '',
-        engines: Array.isArray(webSearch.engines) ? webSearch.engines : [],
+        engines: normalizeWebSearchEngines(webSearch.engines),
       },
     },
   } satisfies EasyTrayEditorConfig;

@@ -15,15 +15,19 @@ import { WindowManager } from './windows/window-manager';
 import { TrayMenuWindow } from './windows/tray-menu-window';
 import { Logger } from './utils/Logger';
 import {
-  ChromeProfileMapping,
-  ChromeProfileRoutingConfig,
-  openChromeProfileUrl,
-} from './chrome-profile';
-import {
   QuickCommandCustomTheme,
   QuickCommandResolvedTheme,
   normalizeQuickCommandTheme,
 } from '../shared/quick-command-theme';
+import {
+  BrowserProfileConfig,
+  DomainProfileConfig,
+  OpenInBrowserConfig,
+  isBrowserUrlInput,
+} from '../shared/browser-routing';
+import { ApplicationSearchService } from './application-search';
+import { openUrlInBrowser } from './open-in-browser';
+import { BUILT_IN_GOOGLE_WEB_SEARCH_ENGINE } from '../shared/config';
 
 type WebSearchOpenTarget = 'external' | 'browser-window';
 type QuickCommandAction =
@@ -31,7 +35,7 @@ type QuickCommandAction =
   | 'browser-window'
   | 'copy-value'
   | 'execute-command'
-  | 'open-chrome-profile'
+  | 'open-in-browser'
   | 'open-settings'
   | 'quit-app';
 
@@ -63,9 +67,6 @@ export interface QuickCommandConfiguredCommand {
   openIn?: WebSearchOpenTarget;
   size?: WindowSizeProp;
   value?: string;
-  chromePath?: string;
-  defaultProfile?: string;
-  profiles?: ChromeProfileMapping[];
   requiresInput?: boolean;
   autoUpdateInterval?: number;
 }
@@ -77,6 +78,10 @@ export interface QuickCommandConfig {
   theme?: string;
   themes?: Record<string, QuickCommandCustomTheme>;
   commands?: QuickCommandConfiguredCommand[];
+  appSearch?: {
+    enabled?: boolean;
+  };
+  openInBrowser?: OpenInBrowserConfig;
   webSearch?: {
     enabled?: boolean;
     defaultEngine?: string;
@@ -101,17 +106,22 @@ interface NormalizedQuickCommandCommand {
   openIn?: WebSearchOpenTarget;
   size?: WindowSizeProp;
   value?: string;
-  chromePath?: string;
-  defaultProfile?: string;
-  profiles?: ChromeProfileMapping[];
   requiresInput?: boolean;
   autoUpdateInterval?: number;
+}
+
+interface NormalizedOpenInBrowserConfig extends OpenInBrowserConfig {
+  profiles: BrowserProfileConfig[];
+  domainProfiles: DomainProfileConfig[];
+  defaultProfileId: string;
 }
 
 interface NormalizedQuickCommandConfig {
   enabled: boolean;
   shortcut: string;
   defaultCommand: string;
+  appSearchEnabled: boolean;
+  openInBrowser: NormalizedOpenInBrowserConfig;
   theme: QuickCommandResolvedTheme;
   commands: NormalizedQuickCommandCommand[];
 }
@@ -119,6 +129,8 @@ interface NormalizedQuickCommandConfig {
 export interface QuickCommandViewConfig {
   shortcut: string;
   defaultCommand: string;
+  appSearchEnabled: boolean;
+  openInBrowserEnabled: boolean;
   theme: QuickCommandResolvedTheme;
   commands: Array<{
     name: string;
@@ -142,15 +154,16 @@ export type QuickCommandResult =
 const DEFAULT_SHORTCUT = 'CommandOrControl+Shift+Space';
 const QUICK_COMMAND_WIDTH = 760;
 const QUICK_COMMAND_HEIGHT = 450;
+const MAX_VISIBLE_RESULTS = 5;
 const DEFAULT_COMMAND_VALUE_UPDATE_INTERVAL = 10000;
 
 const DEFAULT_WEB_SEARCH_ENGINES: NormalizedWebSearchEngine[] = [
   {
-    name: 'Google',
-    command: 'g',
-    aliases: ['google', 'web', 'search'],
-    url: 'https://www.google.com/search?q={{query}}',
-    openIn: 'external',
+    name: BUILT_IN_GOOGLE_WEB_SEARCH_ENGINE.name,
+    command: BUILT_IN_GOOGLE_WEB_SEARCH_ENGINE.command || 'g',
+    aliases: [...(BUILT_IN_GOOGLE_WEB_SEARCH_ENGINE.aliases ?? [])],
+    url: BUILT_IN_GOOGLE_WEB_SEARCH_ENGINE.url,
+    openIn: BUILT_IN_GOOGLE_WEB_SEARCH_ENGINE.openIn ?? 'external',
   },
 ];
 
@@ -177,6 +190,7 @@ export class QuickCommandController {
   private initPromise: Promise<BrowserWindow> | null = null;
   private registeredShortcut: string | null = null;
   private dynamicLabelTimer: ReturnType<typeof setInterval> | null = null;
+  private readonly applicationSearch = new ApplicationSearchService();
   private commandValueLabelCache = new Map<
     string,
     {
@@ -192,7 +206,24 @@ export class QuickCommandController {
     ipcMain.handle('quick-command:execute', (_event, input: unknown) =>
       this.execute(typeof input === 'string' ? input : ''),
     );
+    ipcMain.handle(
+      'quick-command:search-applications',
+      (_event, query: unknown) => this.searchApplications(query),
+    );
+    ipcMain.handle(
+      'quick-command:open-application',
+      (_event, applicationPath: unknown) =>
+        this.openApplication(applicationPath),
+    );
     ipcMain.on('quick-command:hide', () => this.hide());
+    this.applicationSearch
+      .warm()
+      .then((applicationCount) => {
+        Logger.info(`Application index ready: ${applicationCount} apps`);
+      })
+      .catch((error: Error) => {
+        Logger.error(`Index applications failed: ${error.message}`);
+      });
   }
 
   setConfig(config?: QuickCommandConfig) {
@@ -229,6 +260,11 @@ export class QuickCommandController {
     return {
       enabled: config.enabled ?? true,
       shortcut: config.shortcut || DEFAULT_SHORTCUT,
+      appSearchEnabled:
+        process.platform === 'darwin' && config.appSearch?.enabled !== false,
+      openInBrowser: QuickCommandController.normalizeOpenInBrowser(
+        config.openInBrowser,
+      ),
       theme: normalizeQuickCommandTheme(config.theme, config.themes),
       defaultCommand:
         config.defaultCommand ||
@@ -236,6 +272,44 @@ export class QuickCommandController {
         firstCommand?.name ||
         '',
       commands,
+    };
+  }
+
+  private static normalizeOpenInBrowser(
+    config: OpenInBrowserConfig = {},
+  ): NormalizedOpenInBrowserConfig {
+    const profiles = (config.profiles ?? [])
+      .filter(
+        (profile) =>
+          Boolean(profile?.id?.trim()) &&
+          Boolean(profile?.name?.trim()) &&
+          Boolean(profile?.profileDirectory?.trim()) &&
+          Boolean(profile?.path?.trim()),
+      )
+      .map((profile) => ({
+        ...profile,
+        id: profile.id.trim(),
+        name: profile.name.trim(),
+        profileDirectory: profile.profileDirectory.trim(),
+        path: profile.path.trim(),
+      }));
+    const domainProfiles = (config.domainProfiles ?? [])
+      .filter(
+        (rule) =>
+          Boolean(rule?.profileId?.trim()) &&
+          rule.domains?.some((domain) => domain.trim()),
+      )
+      .map((rule) => ({
+        ...rule,
+        domains: rule.domains.map((domain) => domain.trim()).filter(Boolean),
+        profileId: rule.profileId.trim(),
+      }));
+
+    return {
+      profiles,
+      domainProfiles,
+      defaultProfileId:
+        config.defaultProfileId?.trim() || profiles[0]?.id || '',
     };
   }
 
@@ -317,14 +391,6 @@ export class QuickCommandController {
       return null;
     }
 
-    if (
-      normalizedCommand.action === 'open-chrome-profile' &&
-      !normalizedCommand.defaultProfile &&
-      !normalizedCommand.profiles?.length
-    ) {
-      return null;
-    }
-
     return normalizedCommand;
   }
 
@@ -359,6 +425,8 @@ export class QuickCommandController {
     return {
       shortcut: this.config.shortcut,
       defaultCommand: this.config.defaultCommand,
+      appSearchEnabled: this.config.appSearchEnabled,
+      openInBrowserEnabled: this.config.openInBrowser.profiles.length > 0,
       theme: this.config.theme,
       commands: this.config.commands.map((command) => ({
         name: command.name,
@@ -515,6 +583,41 @@ export class QuickCommandController {
       .map((identifier) => identifier.toLowerCase());
   }
 
+  private async searchApplications(query: unknown) {
+    if (!this.config.appSearchEnabled || typeof query !== 'string') return [];
+
+    const normalizedQuery = query.trim().slice(0, 128);
+    if (!normalizedQuery) return [];
+
+    try {
+      return await this.applicationSearch.search(
+        normalizedQuery,
+        MAX_VISIBLE_RESULTS,
+      );
+    } catch (error: any) {
+      Logger.error(`Search applications failed: ${error.message}`);
+      return [];
+    }
+  }
+
+  private async openApplication(
+    applicationPath: unknown,
+  ): Promise<QuickCommandResult> {
+    if (!this.config.appSearchEnabled || typeof applicationPath !== 'string') {
+      return { ok: false, error: 'Application search is disabled' };
+    }
+
+    try {
+      const application = await this.applicationSearch.open(applicationPath);
+      Logger.info(`Quick command open application '${application.name}'`);
+      this.hide();
+      return { ok: true };
+    } catch (error: any) {
+      Logger.error(`Open application failed: ${error.message}`);
+      return { ok: false, error: error.message };
+    }
+  }
+
   private findExplicitCommand(input: string) {
     const normalizedInput = input.toLowerCase();
     let matched:
@@ -558,6 +661,19 @@ export class QuickCommandController {
         command: matchedCommand.command,
         query: input.slice(matchedCommand.identifier.length).trim(),
         explicit: true,
+        directBrowser: false,
+      };
+    }
+
+    if (
+      this.config.openInBrowser.profiles.length > 0 &&
+      isBrowserUrlInput(input)
+    ) {
+      return {
+        command: undefined,
+        query: input,
+        explicit: false,
+        directBrowser: true,
       };
     }
 
@@ -565,6 +681,7 @@ export class QuickCommandController {
       command: this.getDefaultCommand(),
       query: input,
       explicit: false,
+      directBrowser: false,
     };
   }
 
@@ -731,7 +848,7 @@ export class QuickCommandController {
     if (typeof command.requiresInput === 'boolean') {
       return command.requiresInput;
     }
-    return ['web-search', 'open-chrome-profile'].includes(command.action);
+    return ['web-search', 'open-in-browser'].includes(command.action);
   }
 
   private async executeResolvedCommand(
@@ -791,15 +908,11 @@ export class QuickCommandController {
       return;
     }
 
-    if (command.action === 'open-chrome-profile') {
-      const chromeUrl = command.url
+    if (command.action === 'open-in-browser') {
+      const browserUrl = command.url
         ? this.buildUrl(command.url, query, false)
         : query;
-      openChromeProfileUrl(
-        chromeUrl,
-        command as ChromeProfileRoutingConfig,
-        command.name,
-      );
+      openUrlInBrowser(browserUrl, this.config.openInBrowser, command.name);
       return;
     }
 
@@ -825,7 +938,12 @@ export class QuickCommandController {
     }
 
     try {
-      const { command, query } = this.resolveCommand(input);
+      const { command, query, directBrowser } = this.resolveCommand(input);
+      if (directBrowser) {
+        openUrlInBrowser(input, this.config.openInBrowser, 'Direct URL');
+        this.hide();
+        return { ok: true };
+      }
       if (!command) {
         return {
           ok: false,

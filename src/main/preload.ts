@@ -5,6 +5,7 @@ import type {
   QuickCommandResult,
   QuickCommandViewConfig,
 } from './quick-command';
+import type { ApplicationSearchResult } from './application-search';
 import type {
   EasyTrayEditorConfig,
   SettingsConfigResult,
@@ -14,6 +15,8 @@ export type Channels = 'quick-command:show' | 'quick-command:update-config';
 export type InvokeChannels =
   | 'quick-command:get-config'
   | 'quick-command:execute'
+  | 'quick-command:search-applications'
+  | 'quick-command:open-application'
   | 'settings:get-config'
   | 'settings:save-config';
 
@@ -48,6 +51,18 @@ const electronHandler = {
       return ipcRenderer.invoke(
         'quick-command:execute',
         input,
+      ) as Promise<QuickCommandResult>;
+    },
+    searchApplications(query: string) {
+      return ipcRenderer.invoke(
+        'quick-command:search-applications',
+        query,
+      ) as Promise<ApplicationSearchResult[]>;
+    },
+    openApplication(applicationPath: string) {
+      return ipcRenderer.invoke(
+        'quick-command:open-application',
+        applicationPath,
       ) as Promise<QuickCommandResult>;
     },
     hide() {

@@ -1,4 +1,11 @@
 import { QuickCommandCustomTheme } from './quick-command-theme';
+import { OpenInBrowserConfig } from './browser-routing';
+
+export type {
+  BrowserProfileConfig,
+  DomainProfileConfig,
+  OpenInBrowserConfig,
+} from './browser-routing';
 
 export const WINDOW_SIZE_PRESETS = [
   'fullscreen',
@@ -22,27 +29,12 @@ export interface CustomWindowSize {
 
 export type ConfigWindowSize = WindowSizePreset | CustomWindowSize;
 
-export interface ChromeProfileConfig {
-  domains: string[];
-  profile: string;
-  [key: string]: unknown;
-}
-
-export interface LinkInterceptorEditorConfig {
-  enabled?: boolean;
-  registerAsDefaultBrowser?: boolean;
-  chromePath?: string;
-  defaultProfile?: string;
-  profiles?: ChromeProfileConfig[];
-  [key: string]: unknown;
-}
-
 export const QUICK_COMMAND_ACTIONS = [
   'web-search',
   'browser-window',
   'copy-value',
   'execute-command',
-  'open-chrome-profile',
+  'open-in-browser',
   'open-settings',
   'quit-app',
 ] as const;
@@ -60,15 +52,13 @@ export interface QuickCommandEditorEntry {
   openIn?: 'external' | 'browser-window';
   size?: ConfigWindowSize;
   value?: string;
-  chromePath?: string;
-  defaultProfile?: string;
-  profiles?: ChromeProfileConfig[];
   requiresInput?: boolean;
   autoUpdateInterval?: number;
   [key: string]: unknown;
 }
 
 export interface WebSearchEngineEditorConfig {
+  id?: string;
   name: string;
   command?: string;
   aliases?: string[];
@@ -78,10 +68,26 @@ export interface WebSearchEngineEditorConfig {
   [key: string]: unknown;
 }
 
+export const BUILT_IN_GOOGLE_WEB_SEARCH_ENGINE_ID = 'google';
+
+export const BUILT_IN_GOOGLE_WEB_SEARCH_ENGINE: WebSearchEngineEditorConfig = {
+  id: BUILT_IN_GOOGLE_WEB_SEARCH_ENGINE_ID,
+  name: 'Google',
+  command: 'g',
+  aliases: ['google', 'web', 'search'],
+  url: 'https://www.google.com/search?q={{query}}',
+  openIn: 'external',
+};
+
 export interface WebSearchEditorConfig {
   enabled?: boolean;
   defaultEngine?: string;
   engines?: WebSearchEngineEditorConfig[];
+  [key: string]: unknown;
+}
+
+export interface AppSearchEditorConfig {
+  enabled?: boolean;
   [key: string]: unknown;
 }
 
@@ -92,6 +98,8 @@ export interface QuickCommandEditorConfig {
   theme?: string;
   themes?: Record<string, QuickCommandCustomTheme>;
   commands?: QuickCommandEditorEntry[];
+  appSearch?: AppSearchEditorConfig;
+  openInBrowser?: OpenInBrowserConfig;
   webSearch?: WebSearchEditorConfig;
   [key: string]: unknown;
 }
@@ -134,7 +142,6 @@ export interface EasyTrayEditorConfig {
   description?: string;
   menus?: MenuItemEditorConfig[];
   quickCommand?: QuickCommandEditorConfig;
-  linkInterceptor?: LinkInterceptorEditorConfig;
   [key: string]: unknown;
 }
 

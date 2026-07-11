@@ -2,8 +2,8 @@ import React from 'react';
 import {
   AppWindow,
   Command,
+  Compass,
   Globe2,
-  Link2,
   ListTree,
   Menu as MenuIcon,
   Palette,
@@ -18,7 +18,7 @@ import {
 } from '../settings/CommandAndSearchSections';
 import {
   GeneralSettingsSection,
-  LinkRoutingSettingsSection,
+  OpenInBrowserSettingsSection,
   QuickCommandSettingsSection,
 } from '../settings/SettingsCoreSections';
 import {
@@ -31,8 +31,8 @@ type SettingsSectionId =
   | 'general'
   | 'quick-command'
   | 'commands'
+  | 'open-in-browser'
   | 'web-search'
-  | 'link-routing'
   | 'tray-menu'
   | 'themes';
 
@@ -40,8 +40,8 @@ const SETTINGS_SECTIONS = [
   { id: 'general', label: 'General', icon: AppWindow },
   { id: 'quick-command', label: 'Quick Command', icon: Command },
   { id: 'commands', label: 'Commands', icon: ListTree },
+  { id: 'open-in-browser', label: 'Open in Browser', icon: Compass },
   { id: 'web-search', label: 'Web Search', icon: Globe2 },
-  { id: 'link-routing', label: 'Link Routing', icon: Link2 },
   { id: 'tray-menu', label: 'Tray Menu', icon: MenuIcon },
   { id: 'themes', label: 'Custom Themes', icon: Palette },
 ] as const;
@@ -74,6 +74,22 @@ const PREVIEW_CONFIG: EasyTrayEditorConfig = {
     shortcut: 'CommandOrControl+Space',
     defaultCommand: 'g',
     theme: 'macos-glass',
+    openInBrowser: {
+      interceptSystemLinks: true,
+      registerAsDefaultBrowser: false,
+      profiles: [
+        {
+          id: 'Profile-1',
+          name: 'Work',
+          profileDirectory: 'Profile 9',
+          path: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+        },
+      ],
+      domainProfiles: [
+        { domains: ['example.com', '*.example.com'], profileId: 'Profile-1' },
+      ],
+      defaultProfileId: 'Profile-1',
+    },
     commands: [
       {
         name: 'Settings',
@@ -88,11 +104,7 @@ const PREVIEW_CONFIG: EasyTrayEditorConfig = {
         label: 'Chrome Profile',
         aliases: ['c'],
         description: 'Chrome',
-        action: 'open-chrome-profile',
-        defaultProfile: 'Default',
-        profiles: [
-          { domains: ['example.com', '*.example.com'], profile: 'Default' },
-        ],
+        action: 'open-in-browser',
       },
     ],
     webSearch: {
@@ -109,14 +121,6 @@ const PREVIEW_CONFIG: EasyTrayEditorConfig = {
       ],
     },
     themes: {},
-  },
-  linkInterceptor: {
-    enabled: true,
-    registerAsDefaultBrowser: false,
-    defaultProfile: 'Default',
-    profiles: [
-      { domains: ['example.com', '*.example.com'], profile: 'Default' },
-    ],
   },
 };
 
@@ -219,13 +223,13 @@ export function SettingPage() {
         );
       case 'commands':
         return <CommandsSettingsSection config={config} onChange={setConfig} />;
+      case 'open-in-browser':
+        return (
+          <OpenInBrowserSettingsSection config={config} onChange={setConfig} />
+        );
       case 'web-search':
         return (
           <WebSearchSettingsSection config={config} onChange={setConfig} />
-        );
-      case 'link-routing':
-        return (
-          <LinkRoutingSettingsSection config={config} onChange={setConfig} />
         );
       case 'tray-menu':
         return <TrayMenuSettingsSection config={config} onChange={setConfig} />;

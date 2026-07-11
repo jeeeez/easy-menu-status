@@ -1,18 +1,17 @@
 import { app } from 'electron';
 import {
-  ChromeProfileRoutingConfig,
-  openChromeProfileUrl,
-} from './chrome-profile';
+  BrowserProfileConfig,
+  DomainProfileConfig,
+  OpenInBrowserConfig,
+} from '../shared/browser-routing';
+import { openUrlInBrowser } from './open-in-browser';
 import { Logger } from './utils/Logger';
 
-export interface LinkInterceptorConfig extends ChromeProfileRoutingConfig {
-  enabled?: boolean;
-  registerAsDefaultBrowser?: boolean;
-}
-
-interface NormalizedLinkInterceptorConfig extends ChromeProfileRoutingConfig {
-  enabled: boolean;
+interface NormalizedLinkInterceptorConfig extends OpenInBrowserConfig {
+  interceptSystemLinks: boolean;
   registerAsDefaultBrowser: boolean;
+  profiles: BrowserProfileConfig[];
+  domainProfiles: DomainProfileConfig[];
 }
 
 const URL_PROTOCOLS = ['http', 'https'];
@@ -48,7 +47,7 @@ export class LinkInterceptorController {
     });
   }
 
-  setConfig(config?: LinkInterceptorConfig) {
+  setConfig(config?: OpenInBrowserConfig) {
     this.config = LinkInterceptorController.normalizeConfig(config);
     this.configLoaded = true;
     this.updateDefaultProtocolClients();
@@ -56,33 +55,38 @@ export class LinkInterceptorController {
   }
 
   private static normalizeConfig(
-    config: LinkInterceptorConfig = {},
+    config: OpenInBrowserConfig = {},
   ): NormalizedLinkInterceptorConfig {
     return {
-      enabled: config.enabled ?? false,
+      interceptSystemLinks: config.interceptSystemLinks ?? false,
       registerAsDefaultBrowser: config.registerAsDefaultBrowser ?? false,
-      chromePath: config.chromePath,
-      defaultProfile: config.defaultProfile,
+      defaultProfileId: config.defaultProfileId,
       profiles: config.profiles ?? [],
+      domainProfiles: config.domainProfiles ?? [],
     };
   }
 
   private updateDefaultProtocolClients() {
-    if (!this.config.enabled || !this.config.registerAsDefaultBrowser) {
-      return;
-    }
-
     if (!app.isPackaged) {
-      Logger.info('Skip default browser registration outside packaged app');
+      if (
+        this.config.interceptSystemLinks &&
+        this.config.registerAsDefaultBrowser
+      ) {
+        Logger.info('Skip default browser registration outside packaged app');
+      }
       return;
     }
 
+    const shouldRegister =
+      this.config.interceptSystemLinks && this.config.registerAsDefaultBrowser;
     URL_PROTOCOLS.forEach((protocol) => {
-      const ok = app.setAsDefaultProtocolClient(protocol);
+      const ok = shouldRegister
+        ? app.setAsDefaultProtocolClient(protocol)
+        : app.removeAsDefaultProtocolClient(protocol);
       Logger.info(
-        ok
-          ? `Registered as default ${protocol} handler`
-          : `Failed to register default ${protocol} handler`,
+        `${ok ? '' : 'Failed to '}${
+          shouldRegister ? 'register' : 'unregister'
+        } default ${protocol} handler`,
       );
     });
   }
@@ -101,13 +105,13 @@ export class LinkInterceptorController {
       return;
     }
 
-    if (!this.config.enabled) {
+    if (!this.config.interceptSystemLinks) {
       Logger.info(`Link interceptor disabled, ignored ${input}`);
       return;
     }
 
     try {
-      openChromeProfileUrl(input, this.config, sourceName);
+      openUrlInBrowser(input, this.config, sourceName);
     } catch (error: any) {
       Logger.error(`${sourceName} route failed: ${error.message}`);
     }

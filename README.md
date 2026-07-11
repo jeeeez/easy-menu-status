@@ -10,7 +10,7 @@ npm start
 
 Open Quick Command and run `Settings` to edit `~/easy-tray.config.json`
 without changing the file manually. The editor supports General, Quick
-Command, Commands, Web Search, Link Routing, Tray Menu, and Custom Themes
+Command, Commands, Open in Browser, Web Search, Tray Menu, and Custom Themes
 settings. Use the Save button or `CommandOrControl+S` to apply changes
 immediately.
 
@@ -38,6 +38,38 @@ default command, web search engines, and Alfred-style commands:
     "shortcut": "CommandOrControl+Shift+Space",
     "defaultCommand": "g",
     "theme": "alfred-classic",
+    "appSearch": {
+      "enabled": true
+    },
+    "openInBrowser": {
+      "interceptSystemLinks": true,
+      "registerAsDefaultBrowser": true,
+      "profiles": [
+        {
+          "id": "Profile-1",
+          "name": "Work",
+          "profileDirectory": "Profile 11",
+          "path": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+        },
+        {
+          "id": "Profile-2",
+          "name": "Personal",
+          "profileDirectory": "Default",
+          "path": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+        }
+      ],
+      "domainProfiles": [
+        {
+          "domains": ["ringcentral.com", "*.ringcentral.com"],
+          "profileId": "Profile-1"
+        },
+        {
+          "domains": ["google.com", "*.google.com"],
+          "profileId": "Profile-2"
+        }
+      ],
+      "defaultProfileId": "Profile-1"
+    },
     "commands": [
       {
         "name": "rc",
@@ -78,33 +110,15 @@ default command, web search engines, and Alfred-style commands:
         "label": "Chrome Auto Profile",
         "aliases": ["c"],
         "description": "Chrome",
-        "action": "open-chrome-profile",
-        "defaultProfile": "Profile 11",
-        "profiles": [
-          {
-            "domains": ["ringcentral.com", "*.ringcentral.com"],
-            "profile": "Profile 11"
-          },
-          {
-            "domains": ["google.com", "*.google.com"],
-            "profile": "Default"
-          }
-        ]
+        "action": "open-in-browser"
       },
       {
         "name": "fiji",
         "label": "Jira FIJI",
         "aliases": ["FIJI"],
         "description": "Jira",
-        "action": "open-chrome-profile",
-        "url": "https://jira.ringcentral.com/browse/{{query}}",
-        "defaultProfile": "Profile 11",
-        "profiles": [
-          {
-            "domains": ["jira.ringcentral.com"],
-            "profile": "Profile 11"
-          }
-        ]
+        "action": "open-in-browser",
+        "url": "https://jira.ringcentral.com/browse/{{query}}"
       }
     ],
     "webSearch": {
@@ -135,6 +149,12 @@ Command, `label` is the primary result text, `description` is supporting text
 shown below the label, and `action` is shown at the right edge. For
 `copy-value` and `execute-command`, `command` contains the local shell command
 to run.
+
+On macOS, application search is enabled by default. EasyTray indexes apps in
+`~/Applications`, `/Applications`, and `/System/Applications`, then mixes App
+matches into Quick Command results. Select an App with the arrow keys and press
+`Enter` to open it. Set `quickCommand.appSearch.enabled` to `false` to disable
+App results.
 
 ### Quick Command Themes
 
@@ -208,7 +228,7 @@ Supported command actions:
 - `browser-window`: open a URL inside EasyTray.
 - `copy-value`: copy static or generated text to the clipboard.
 - `execute-command`: run a local shell command.
-- `open-chrome-profile`: open a URL with a Chrome profile selected by domain.
+- `open-in-browser`: open a URL with the browser profile selected by domain.
 - `open-settings`: open the EasyTray settings editor.
 - `quit-app`: quit EasyTray.
 
@@ -226,52 +246,51 @@ set `autoUpdateInterval` in milliseconds to customize it, or `0` to disable
 periodic display refresh. Set `openIn` to `browser-window` on a `web-search`
 command to open results inside EasyTray instead of the default browser.
 
-For `open-chrome-profile`, input URLs without a protocol automatically get
-`https://` added. For example, `chrome app.ringcentral.com` opens
-`https://app.ringcentral.com` with the matching profile. Use `chromePath` only
-if Chrome is installed somewhere other than
-`/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`.
-You can also set `url` as a template, for example `fiji FIJI-103480` opens
-`https://jira.ringcentral.com/browse/FIJI-103480` and still routes through the
-Chrome profile rules.
+For `open-in-browser`, each entry in `openInBrowser.profiles` defines an
+immutable `id`, a display `name`, the Chrome `profileDirectory`, and the browser
+executable `path`. Only `profileDirectory` is passed to Chrome as
+`--profile-directory`; `domainProfiles[].profileId` and `defaultProfileId`
+reference the stable `id`, so renaming the display name does not break routing.
+The Settings editor generates IDs as `Profile-1`, `Profile-2`, and so on.
+`domainProfiles` selects a profile for exact domains or wildcards such as
+`*.ringcentral.com`, and `defaultProfileId` handles everything else. Input URLs
+without a protocol automatically get `https://` added. For example,
+`chrome app.ringcentral.com` opens `https://app.ringcentral.com` with the
+matching profile. You can also set `url` as a command template, for example
+`fiji FIJI-103480` opens
+`https://jira.ringcentral.com/browse/FIJI-103480` through the same profile
+rules. Typing a URL directly into Quick Command and pressing `Enter` also runs
+`open-in-browser`; an explicit command prefix still takes precedence.
 
-## Link Interceptor
+## System Link Routing
 
 System-level link interception only works when EasyTray is registered as the
-default handler for `http` and `https`. Add `linkInterceptor` to
-`~/easy-tray.config.json`, package/install the app, then enable
-`registerAsDefaultBrowser`:
+default handler for `http` and `https`. In `quickCommand.openInBrowser`, enable
+both `interceptSystemLinks` and `registerAsDefaultBrowser`, then package and
+install the app. System links reuse the same `profiles`, `domainProfiles`, and
+`defaultProfileId` configuration used by Quick Command.
 
 ```json
 {
-  "linkInterceptor": {
-    "enabled": true,
-    "registerAsDefaultBrowser": true,
-    "defaultProfile": "Profile 11",
-    "profiles": [
-      {
-        "domains": ["ringcentral.com", "*.ringcentral.com"],
-        "profile": "Profile 9"
-      },
-      {
-        "domains": ["rclabenv.com", "*.rclabenv.com"],
-        "profile": "Profile 11"
-      }
-    ]
+  "quickCommand": {
+    "openInBrowser": {
+      "interceptSystemLinks": true,
+      "registerAsDefaultBrowser": true
+    }
   }
 }
 ```
 
 When enabled, a system click on `app.ringcentral.com` is routed through EasyTray
 and opened in Chrome with the matched profile. Links without a matched domain use
-`defaultProfile`. Development builds skip default-browser registration; use the
-packaged app for real system link interception.
+`defaultProfileId`. Development builds skip default-browser registration; use
+the packaged app for real system link interception.
 
 Local file targets are also supported when they reach EasyTray. For example,
 `chrome /Users/me/Documents/report.html` and a macOS `open-file` event are
-forwarded to Chrome with `defaultProfile`. Registering EasyTray as the default
-browser only covers `http` and `https`; macOS still chooses handlers for raw
-files by file type, so it does not make EasyTray the default app for every file.
+forwarded using the default browser profile. Registering EasyTray as the default
+browser only covers `http` and `https`; macOS still chooses handlers for raw files
+by file type, so it does not make EasyTray the default app for every file.
 
 ## Packaging for Production
 

@@ -5,13 +5,14 @@ import {
   getQuickCommandThemeCssVariables,
   isQuickCommandPresetTheme,
 } from '../../shared/quick-command-theme';
+import { isBrowserUrlInput } from '../../shared/browser-routing';
 
 type QuickCommandAction =
   | 'web-search'
   | 'browser-window'
   | 'copy-value'
   | 'execute-command'
-  | 'open-chrome-profile'
+  | 'open-in-browser'
   | 'open-settings'
   | 'quit-app';
 
@@ -27,9 +28,32 @@ interface QuickCommandEntry {
 interface QuickCommandViewConfig {
   shortcut: string;
   defaultCommand: string;
+  appSearchEnabled: boolean;
+  openInBrowserEnabled: boolean;
   theme: QuickCommandResolvedTheme;
   commands: QuickCommandEntry[];
 }
+
+interface QuickCommandApplicationResult {
+  name: string;
+  path: string;
+  icon?: string;
+  score: number;
+}
+
+type QuickCommandListItem =
+  | {
+      kind: 'command';
+      command: QuickCommandEntry;
+      index: number;
+      score: number;
+    }
+  | {
+      kind: 'application';
+      application: QuickCommandApplicationResult;
+      index: number;
+      score: number;
+    };
 
 type QuickCommandStyle = React.CSSProperties & {
   [customProperty: `--${string}`]: string | number | undefined;
@@ -39,6 +63,7 @@ const COMMAND_TAG_MIN_WIDTH = 64;
 const COMMAND_TAG_MAX_WIDTH = 136;
 const COMMAND_TAG_CHARACTER_WIDTH = 9;
 const COMMAND_TAG_HORIZONTAL_SPACE = 30;
+const MAX_VISIBLE_RESULTS = 5;
 const previewTheme = new URLSearchParams(window.location.search).get('theme');
 const defaultPreviewTheme = isQuickCommandPresetTheme(previewTheme)
   ? previewTheme
@@ -64,7 +89,7 @@ const ACTION_LABELS: Record<QuickCommandAction, string> = {
   'browser-window': 'Open',
   'copy-value': 'Copy',
   'execute-command': 'Run',
-  'open-chrome-profile': 'Chrome',
+  'open-in-browser': 'Open',
   'open-settings': 'Open',
   'quit-app': 'Quit',
 };
@@ -72,6 +97,8 @@ const ACTION_LABELS: Record<QuickCommandAction, string> = {
 const DEFAULT_CONFIG: QuickCommandViewConfig = {
   shortcut: '',
   defaultCommand: 'g',
+  appSearchEnabled: false,
+  openInBrowserEnabled: false,
   theme: {
     name: defaultPreviewTheme,
     preset: defaultPreviewTheme,
@@ -92,6 +119,17 @@ function getCommandIdentifiers(command: QuickCommandEntry) {
   return [command.name, ...command.aliases]
     .filter(Boolean)
     .map((identifier) => identifier.toLowerCase());
+}
+
+function hasExplicitCommandInput(input: string, commands: QuickCommandEntry[]) {
+  const normalizedInput = input.trim().toLowerCase();
+  return commands.some((command) =>
+    getCommandIdentifiers(command).some(
+      (identifier) =>
+        normalizedInput === identifier ||
+        normalizedInput.startsWith(`${identifier} `),
+    ),
+  );
 }
 
 function splitInput(input: string) {
@@ -244,6 +282,12 @@ function rankCommands(
     .map(({ command }) => command);
 }
 
+function getListItemKey(item: QuickCommandListItem) {
+  return item.kind === 'command'
+    ? `command:${item.command.name}`
+    : `application:${item.application.path}`;
+}
+
 function isCanonicalCommandInput(input: string, command: QuickCommandEntry) {
   const normalizedInput = input.trim().toLowerCase();
   const canonicalName = command.name.toLowerCase();
@@ -345,7 +389,12 @@ export function QuickCommandPage() {
   const inputRef = React.useRef<HTMLInputElement>(null);
   const [input, setInput] = React.useState('');
   const [error, setError] = React.useState('');
+  const [isComposing, setIsComposing] = React.useState(false);
   const [selectedIndex, setSelectedIndex] = React.useState(0);
+  const [applicationSearch, setApplicationSearch] = React.useState<{
+    query: string;
+    results: QuickCommandApplicationResult[];
+  }>({ query: '', results: [] });
   const [config, setConfig] =
     React.useState<QuickCommandViewConfig>(DEFAULT_CONFIG);
 
@@ -383,6 +432,8 @@ export function QuickCommandPage() {
       setConfig(nextConfig);
       setInput('');
       setError('');
+      setIsComposing(false);
+      setApplicationSearch({ query: '', results: [] });
       setSelectedIndex(0);
       focusInput();
     });
@@ -412,21 +463,93 @@ export function QuickCommandPage() {
     [focusInput, quickCommandBridge],
   );
 
-  const visibleCommands = rankCommands(
+  const applicationQuery = input.trim();
+  React.useEffect(() => {
+    let cancelled = false;
+    if (
+      !applicationQuery ||
+      isComposing ||
+      !config.appSearchEnabled ||
+      !quickCommandBridge ||
+      typeof quickCommandBridge.searchApplications !== 'function'
+    ) {
+      setApplicationSearch({ query: '', results: [] });
+      return undefined;
+    }
+
+    quickCommandBridge
+      .searchApplications(applicationQuery)
+      .then((results) => {
+        if (!cancelled) {
+          setApplicationSearch({ query: applicationQuery, results });
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setApplicationSearch({ query: applicationQuery, results: [] });
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    applicationQuery,
+    config.appSearchEnabled,
+    isComposing,
+    quickCommandBridge,
+  ]);
+
+  const rankedCommands = rankCommands(
     config.commands,
     input,
     config.defaultCommand,
-  ).slice(0, 5);
-  const fallbackCommands = (
-    visibleCommands.length > 0
-      ? visibleCommands
-      : orderCommands(config.commands, config.defaultCommand)
-  ).slice(0, 5);
-  const selectedCommand =
-    fallbackCommands[selectedIndex] ?? fallbackCommands[0];
-  const commandListKey = config.commands
-    .map((command) => command.name)
-    .join('\n');
+  );
+  const matchingApplications =
+    applicationSearch.query === applicationQuery
+      ? applicationSearch.results
+      : [];
+  const commandItems: QuickCommandListItem[] = rankedCommands.map(
+    (command, index) => ({
+      kind: 'command',
+      command,
+      index,
+      score: getCommandMatchScore(command, input),
+    }),
+  );
+  const applicationItems: QuickCommandListItem[] = matchingApplications.map(
+    (application, index) => ({
+      kind: 'application',
+      application,
+      index,
+      score: application.score,
+    }),
+  );
+  const matchingItems = [...commandItems, ...applicationItems].sort(
+    (leftItem, rightItem) => {
+      if (leftItem.score !== rightItem.score) {
+        return rightItem.score - leftItem.score;
+      }
+      if (leftItem.kind !== rightItem.kind) {
+        return leftItem.kind === 'command' ? -1 : 1;
+      }
+      return leftItem.index - rightItem.index;
+    },
+  );
+  const defaultItems: QuickCommandListItem[] = orderCommands(
+    config.commands,
+    config.defaultCommand,
+  ).map((command, index) => ({
+    kind: 'command',
+    command,
+    index,
+    score: 0,
+  }));
+  const visibleItems = (
+    applicationQuery && matchingItems.length > 0 ? matchingItems : defaultItems
+  ).slice(0, MAX_VISIBLE_RESULTS);
+  const selectedItem = visibleItems[selectedIndex] ?? visibleItems[0];
+  const resultListKey = visibleItems.map(getListItemKey).join('\n');
   const quickCommandStyle = React.useMemo<QuickCommandStyle>(
     () => ({
       '--quick-command-tag-width': `${getCommandTagWidth(config.commands)}px`,
@@ -437,7 +560,7 @@ export function QuickCommandPage() {
 
   React.useEffect(() => {
     setSelectedIndex(0);
-  }, [input, commandListKey]);
+  }, [input, resultListKey]);
 
   const selectCommand = React.useCallback(
     (command?: QuickCommandEntry) => {
@@ -478,6 +601,43 @@ export function QuickCommandPage() {
     [executeInput, focusInputEnd, input],
   );
 
+  const openApplication = React.useCallback(
+    async (application: QuickCommandApplicationResult) => {
+      if (
+        !quickCommandBridge ||
+        typeof quickCommandBridge.openApplication !== 'function'
+      ) {
+        setError('Applications can only open inside EasyTray');
+        return;
+      }
+
+      try {
+        const result = await quickCommandBridge.openApplication(
+          application.path,
+        );
+        if (!result.ok) {
+          setError(result.error);
+          focusInput();
+        }
+      } catch (openError: any) {
+        setError(openError.message);
+        focusInput();
+      }
+    },
+    [focusInput, quickCommandBridge],
+  );
+
+  const selectItem = React.useCallback(
+    (item?: QuickCommandListItem) => {
+      if (item?.kind === 'application') {
+        openApplication(item.application);
+        return;
+      }
+      selectCommand(item?.command);
+    },
+    [openApplication, selectCommand],
+  );
+
   return (
     <main
       className="quick-command-page"
@@ -504,9 +664,11 @@ export function QuickCommandPage() {
             }}
             onCompositionStart={(event) => {
               event.currentTarget.dataset.quickCommandComposing = 'true';
+              setIsComposing(true);
             }}
             onCompositionEnd={(event) => {
               delete event.currentTarget.dataset.quickCommandComposing;
+              setIsComposing(false);
             }}
             onKeyDown={(event) => {
               if (isComposingInputEvent(event)) {
@@ -516,57 +678,96 @@ export function QuickCommandPage() {
               if (event.key === 'Escape') {
                 quickCommandBridge?.hide();
               }
-              if (event.key === 'ArrowDown' && fallbackCommands.length > 0) {
+              if (event.key === 'ArrowDown' && visibleItems.length > 0) {
                 event.preventDefault();
                 setSelectedIndex(
-                  (currentIndex) =>
-                    (currentIndex + 1) % fallbackCommands.length,
+                  (currentIndex) => (currentIndex + 1) % visibleItems.length,
                 );
               }
-              if (event.key === 'ArrowUp' && fallbackCommands.length > 0) {
+              if (event.key === 'ArrowUp' && visibleItems.length > 0) {
                 event.preventDefault();
                 setSelectedIndex(
                   (currentIndex) =>
-                    (currentIndex - 1 + fallbackCommands.length) %
-                    fallbackCommands.length,
+                    (currentIndex - 1 + visibleItems.length) %
+                    visibleItems.length,
                 );
               }
               if (event.key === 'Enter') {
                 event.preventDefault();
-                selectCommand(selectedCommand);
+                if (
+                  config.openInBrowserEnabled &&
+                  isBrowserUrlInput(input) &&
+                  !hasExplicitCommandInput(input, config.commands)
+                ) {
+                  executeInput(input);
+                  return;
+                }
+                selectItem(selectedItem);
               }
             }}
           />
         </div>
         <div className="quick-command-footer">
           <div className="quick-command-engines">
-            {fallbackCommands.map((command, index) => (
-              <button
-                type="button"
-                aria-pressed={index === selectedIndex}
-                className={`quick-command-engine ${
-                  index === selectedIndex ? 'quick-command-engine--active' : ''
-                }`}
-                key={command.name}
-                onClick={() => selectCommand(command)}
-                onMouseEnter={() => setSelectedIndex(index)}
-              >
-                <kbd className="quick-command-engine-name">{command.name}</kbd>
-                <span className="quick-command-engine-content">
-                  <span className="quick-command-engine-label">
-                    {command.label}
+            {visibleItems.map((item, index) => {
+              const isApplication = item.kind === 'application';
+              const label = isApplication
+                ? item.application.name
+                : item.command.label;
+              const description = isApplication
+                ? 'Application'
+                : item.command.description;
+              const action = isApplication
+                ? 'Open'
+                : ACTION_LABELS[item.command.action];
+
+              return (
+                <button
+                  type="button"
+                  aria-pressed={index === selectedIndex}
+                  className={`quick-command-engine ${
+                    isApplication ? 'quick-command-engine--application ' : ''
+                  }${
+                    index === selectedIndex
+                      ? 'quick-command-engine--active'
+                      : ''
+                  }`}
+                  key={getListItemKey(item)}
+                  onClick={() => selectItem(item)}
+                  onMouseEnter={() => setSelectedIndex(index)}
+                >
+                  {isApplication ? (
+                    <span
+                      aria-hidden="true"
+                      className="quick-command-application-icon"
+                    >
+                      {item.application.icon ? (
+                        <img
+                          alt=""
+                          draggable={false}
+                          src={item.application.icon}
+                        />
+                      ) : (
+                        <span>{item.application.name.slice(0, 1)}</span>
+                      )}
+                    </span>
+                  ) : (
+                    <kbd className="quick-command-engine-name">
+                      {item.command.name}
+                    </kbd>
+                  )}
+                  <span className="quick-command-engine-content">
+                    <span className="quick-command-engine-label">{label}</span>
+                    {description ? (
+                      <small className="quick-command-engine-description">
+                        {description}
+                      </small>
+                    ) : null}
                   </span>
-                  {command.description ? (
-                    <small className="quick-command-engine-description">
-                      {command.description}
-                    </small>
-                  ) : null}
-                </span>
-                <span className="quick-command-engine-action">
-                  {ACTION_LABELS[command.action]}
-                </span>
-              </button>
-            ))}
+                  <span className="quick-command-engine-action">{action}</span>
+                </button>
+              );
+            })}
           </div>
           <span
             aria-live="polite"

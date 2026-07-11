@@ -1,5 +1,6 @@
 import React from 'react';
 import {
+  BUILT_IN_GOOGLE_WEB_SEARCH_ENGINE_ID,
   EasyTrayEditorConfig,
   QUICK_COMMAND_ACTIONS,
   QuickCommandEditorEntry,
@@ -8,7 +9,6 @@ import {
 import {
   CollectionToolbar,
   NumberField,
-  ProfilesEditor,
   SelectField,
   TextField,
   ToggleField,
@@ -32,7 +32,7 @@ const ACTION_LABELS: Record<QuickCommandEditorEntry['action'], string> = {
   'browser-window': 'Browser Window',
   'copy-value': 'Copy Value',
   'execute-command': 'Execute Command',
-  'open-chrome-profile': 'Chrome Profile',
+  'open-in-browser': 'Open in Browser',
   'open-settings': 'Open Settings',
   'quit-app': 'Quit App',
 };
@@ -96,7 +96,7 @@ function CommandEntryEditor({ entry, onChange }: CommandEntryEditorProps) {
         onChange={(requiresInput) => update({ requiresInput })}
       />
 
-      {['web-search', 'browser-window', 'open-chrome-profile'].includes(
+      {['web-search', 'browser-window', 'open-in-browser'].includes(
         entry.action,
       ) ? (
         <TextField
@@ -150,27 +150,6 @@ function CommandEntryEditor({ entry, onChange }: CommandEntryEditorProps) {
           value={entry.command}
           onChange={(command) => update({ command })}
         />
-      ) : null}
-
-      {entry.action === 'open-chrome-profile' ? (
-        <>
-          <div className="settings-field-grid">
-            <TextField
-              label="Default Chrome profile"
-              value={entry.defaultProfile}
-              onChange={(defaultProfile) => update({ defaultProfile })}
-            />
-            <TextField
-              label="Chrome path"
-              value={entry.chromePath}
-              onChange={(chromePath) => update({ chromePath })}
-            />
-          </div>
-          <ProfilesEditor
-            profiles={entry.profiles}
-            onChange={(profiles) => update({ profiles })}
-          />
-        </>
       ) : null}
 
       {['web-search', 'browser-window'].includes(entry.action) ? (
@@ -380,6 +359,8 @@ export function WebSearchSettingsSection({
       },
     });
   const selectedEngine = engines[selectedIndex];
+  const selectedEngineIsBuiltIn =
+    selectedEngine?.id === BUILT_IN_GOOGLE_WEB_SEARCH_ENGINE_ID;
 
   const addEngine = () => {
     const command = createUniqueName(
@@ -428,10 +409,17 @@ export function WebSearchSettingsSection({
       <div className="settings-master-detail">
         <aside className="settings-collection-pane">
           <CollectionToolbar
+            deleteDisabled={selectedEngineIsBuiltIn}
+            deleteLabel={
+              selectedEngineIsBuiltIn
+                ? 'Default Google engine cannot be deleted'
+                : 'Delete'
+            }
             itemCount={engines.length}
             selectedIndex={selectedIndex}
             onAdd={addEngine}
             onDelete={() => {
+              if (selectedEngineIsBuiltIn) return;
               updateWebSearch({
                 engines: engines.filter(
                   (_engine, index) => index !== selectedIndex,
@@ -442,6 +430,7 @@ export function WebSearchSettingsSection({
             onDuplicate={() => {
               if (!selectedEngine) return;
               const nextEngine = cloneConfigValue(selectedEngine);
+              delete nextEngine.id;
               nextEngine.name = `${nextEngine.name} Copy`;
               nextEngine.command = createUniqueName(
                 nextEngine.command || 'search',
@@ -465,7 +454,7 @@ export function WebSearchSettingsSection({
                 className={`settings-collection-item ${
                   index === selectedIndex ? 'is-selected' : ''
                 }`}
-                key={engine.command || engine.name}
+                key={engine.id || engine.command || engine.name}
                 type="button"
                 onClick={() => setSelectedIndex(index)}
               >
@@ -479,13 +468,41 @@ export function WebSearchSettingsSection({
           {selectedEngine ? (
             <SearchEngineEditor
               engine={selectedEngine}
-              onChange={(engine) =>
-                updateWebSearch({
+              onChange={(engine) => {
+                const previousIdentifiers = [
+                  selectedEngine.command || selectedEngine.name,
+                  ...(selectedEngine.aliases ?? []),
+                ].map((identifier) => identifier.trim().toLowerCase());
+                const nextCommand = engine.command || engine.name;
+                const referencesSelectedEngine = (value?: string) =>
+                  Boolean(
+                    value &&
+                      previousIdentifiers.includes(value.trim().toLowerCase()),
+                  );
+                const nextWebSearch = {
+                  ...webSearch,
+                  defaultEngine: referencesSelectedEngine(
+                    webSearch.defaultEngine,
+                  )
+                    ? nextCommand
+                    : webSearch.defaultEngine,
                   engines: engines.map((currentEngine, index) =>
                     index === selectedIndex ? engine : currentEngine,
                   ),
-                })
-              }
+                };
+                onChange({
+                  ...config,
+                  quickCommand: {
+                    ...quickCommand,
+                    defaultCommand: referencesSelectedEngine(
+                      quickCommand.defaultCommand,
+                    )
+                      ? nextCommand
+                      : quickCommand.defaultCommand,
+                    webSearch: nextWebSearch,
+                  },
+                });
+              }}
             />
           ) : (
             <div className="settings-empty-state">No search engines</div>

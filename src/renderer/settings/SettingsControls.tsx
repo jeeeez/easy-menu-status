@@ -1,8 +1,9 @@
 import React from 'react';
 import { ChevronDown, ChevronUp, Copy, Plus, Trash2 } from 'lucide-react';
 import {
-  ChromeProfileConfig,
+  BrowserProfileConfig,
   ConfigWindowSize,
+  DomainProfileConfig,
   WINDOW_SIZE_PRESETS,
   WindowSizePreset,
 } from '../../shared/config';
@@ -301,6 +302,8 @@ export function IconButton({
 
 interface CollectionToolbarProps {
   addLabel?: string;
+  deleteDisabled?: boolean;
+  deleteLabel?: string;
   selectedIndex: number;
   itemCount: number;
   onAdd: () => void;
@@ -312,6 +315,8 @@ interface CollectionToolbarProps {
 
 export function CollectionToolbar({
   addLabel = 'Add',
+  deleteDisabled = false,
+  deleteLabel = 'Delete',
   selectedIndex,
   itemCount,
   onAdd,
@@ -351,8 +356,8 @@ export function CollectionToolbar({
       </IconButton>
       <IconButton
         danger
-        disabled={!hasSelection}
-        label="Delete"
+        disabled={!hasSelection || deleteDisabled}
+        label={deleteLabel}
         onClick={onDelete}
       >
         <Trash2 size={15} />
@@ -361,18 +366,28 @@ export function CollectionToolbar({
   );
 }
 
-interface ProfilesEditorProps {
-  profiles?: ChromeProfileConfig[];
-  onChange: (profiles: ChromeProfileConfig[]) => void;
+interface BrowserProfilesEditorProps {
+  profiles?: BrowserProfileConfig[];
+  onChange: (profiles: BrowserProfileConfig[]) => void;
 }
 
-export function ProfilesEditor({
+function createBrowserProfileId(profiles: BrowserProfileConfig[]) {
+  const highestProfileNumber = profiles.reduce((highestNumber, profile) => {
+    const match = /^Profile-(\d+)$/i.exec(profile.id.trim());
+    return match
+      ? Math.max(highestNumber, Number.parseInt(match[1], 10))
+      : highestNumber;
+  }, 0);
+  return `Profile-${highestProfileNumber + 1}`;
+}
+
+export function BrowserProfilesEditor({
   profiles = [],
   onChange,
-}: ProfilesEditorProps) {
+}: BrowserProfilesEditorProps) {
   const updateProfile = (
     index: number,
-    patch: Partial<ChromeProfileConfig>,
+    patch: Partial<BrowserProfileConfig>,
   ) => {
     onChange(
       profiles.map((profile, profileIndex) =>
@@ -384,40 +399,65 @@ export function ProfilesEditor({
   return (
     <div className="settings-subsection">
       <div className="settings-subsection-header">
-        <h3>Profiles</h3>
+        <h3>Browser profiles</h3>
         <IconButton
-          label="Add profile"
-          onClick={() => onChange([...profiles, { domains: [], profile: '' }])}
+          label="Add browser profile"
+          onClick={() =>
+            onChange([
+              ...profiles,
+              {
+                id: createBrowserProfileId(profiles),
+                name: '',
+                profileDirectory: '',
+                path: '',
+              },
+            ])
+          }
         >
           <Plus size={16} />
         </IconButton>
       </div>
       <div className="settings-table">
         {profiles.map((profile, index) => (
-          // Profile rows are not reorderable; their array position is stable while editing.
-          // eslint-disable-next-line react/no-array-index-key
-          <div className="settings-table-row settings-profile-row" key={index}>
+          <div
+            className="settings-table-row settings-browser-row"
+            key={profile.id}
+          >
             <input
-              aria-label="Domains"
-              placeholder="example.com, *.example.com"
-              value={formatStringList(profile.domains)}
+              readOnly
+              aria-label="Profile ID"
+              title={profile.id}
+              value={profile.id}
+            />
+            <input
+              aria-label="Profile name"
+              placeholder="Work"
+              value={profile.name}
+              onChange={(event) =>
+                updateProfile(index, { name: event.target.value })
+              }
+            />
+            <input
+              aria-label="Profile directory"
+              placeholder="Profile 9"
+              value={profile.profileDirectory}
               onChange={(event) =>
                 updateProfile(index, {
-                  domains: parseStringList(event.target.value),
+                  profileDirectory: event.target.value,
                 })
               }
             />
             <input
-              aria-label="Chrome profile"
-              placeholder="Profile 1"
-              value={profile.profile}
+              aria-label="Browser path"
+              placeholder="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+              value={profile.path}
               onChange={(event) =>
-                updateProfile(index, { profile: event.target.value })
+                updateProfile(index, { path: event.target.value })
               }
             />
             <IconButton
               danger
-              label="Delete profile"
+              label="Delete browser profile"
               onClick={() =>
                 onChange(
                   profiles.filter(
@@ -431,7 +471,100 @@ export function ProfilesEditor({
           </div>
         ))}
         {profiles.length === 0 ? (
-          <div className="settings-empty-row">No profiles</div>
+          <div className="settings-empty-row">No browser profiles</div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+interface DomainProfilesEditorProps {
+  domainProfiles?: DomainProfileConfig[];
+  profileOptions: Array<{ id: string; name: string }>;
+  onChange: (domainProfiles: DomainProfileConfig[]) => void;
+}
+
+export function DomainProfilesEditor({
+  domainProfiles = [],
+  profileOptions,
+  onChange,
+}: DomainProfilesEditorProps) {
+  const updateRule = (index: number, patch: Partial<DomainProfileConfig>) => {
+    onChange(
+      domainProfiles.map((rule, ruleIndex) =>
+        ruleIndex === index ? { ...rule, ...patch } : rule,
+      ),
+    );
+  };
+
+  return (
+    <div className="settings-subsection">
+      <div className="settings-subsection-header">
+        <h3>Domain profiles</h3>
+        <IconButton
+          label="Add domain profile"
+          onClick={() =>
+            onChange([
+              ...domainProfiles,
+              { domains: [], profileId: profileOptions[0]?.id ?? '' },
+            ])
+          }
+        >
+          <Plus size={16} />
+        </IconButton>
+      </div>
+      <div className="settings-table">
+        {domainProfiles.map((rule, index) => (
+          // Domain rows are not reorderable; their array position is stable while editing.
+          // eslint-disable-next-line react/no-array-index-key
+          <div className="settings-table-row settings-profile-row" key={index}>
+            <input
+              aria-label="Domains"
+              placeholder="*.ringcentral.com"
+              value={formatStringList(rule.domains)}
+              onChange={(event) =>
+                updateRule(index, {
+                  domains: parseStringList(event.target.value),
+                })
+              }
+            />
+            <select
+              aria-label="Browser profile"
+              value={rule.profileId}
+              onChange={(event) =>
+                updateRule(index, { profileId: event.target.value })
+              }
+            >
+              <option value="">Select profile</option>
+              {rule.profileId &&
+              !profileOptions.some(
+                (profile) => profile.id === rule.profileId,
+              ) ? (
+                <option value={rule.profileId}>{rule.profileId}</option>
+              ) : null}
+              {profileOptions.map((profile) => (
+                <option key={profile.id} value={profile.id}>
+                  {profile.name}
+                </option>
+              ))}
+            </select>
+            <IconButton
+              danger
+              label="Delete domain profile"
+              onClick={() =>
+                onChange(
+                  domainProfiles.filter(
+                    (_rule, ruleIndex) => ruleIndex !== index,
+                  ),
+                )
+              }
+            >
+              <Trash2 size={15} />
+            </IconButton>
+          </div>
+        ))}
+        {domainProfiles.length === 0 ? (
+          <div className="settings-empty-row">No domain profiles</div>
         ) : null}
       </div>
     </div>

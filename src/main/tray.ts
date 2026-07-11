@@ -16,10 +16,7 @@ import { WindowManager } from './windows/window-manager';
 import { Logger } from './utils/Logger';
 import { WindowSizeProp } from './types';
 import { QuickCommandConfig, QuickCommandController } from './quick-command';
-import {
-  LinkInterceptorConfig,
-  LinkInterceptorController,
-} from './link-interceptor';
+import { LinkInterceptorController } from './link-interceptor';
 
 function pbcopy(data: string) {
   const proc = spawn('pbcopy', [], {
@@ -71,7 +68,6 @@ interface TrayMenuConfig {
   title: string;
   description: string;
   quickCommand?: QuickCommandConfig;
-  linkInterceptor?: LinkInterceptorConfig;
   menus: MenuItem[];
 }
 
@@ -143,11 +139,15 @@ export class TrayController {
       config.icon = await this.calculateTrayIcon(config.icon);
       this.config = config;
       QuickCommandController.instance().setConfig(config.quickCommand);
-      LinkInterceptorController.instance().setConfig(config.linkInterceptor);
+      LinkInterceptorController.instance().setConfig(
+        config.quickCommand?.openInBrowser,
+      );
     } catch (error: any) {
       Logger.error(error.message);
       QuickCommandController.instance().setConfig({ enabled: false });
-      LinkInterceptorController.instance().setConfig({ enabled: false });
+      LinkInterceptorController.instance().setConfig({
+        interceptSystemLinks: false,
+      });
       this.config = {
         icon: nativeImage.createEmpty(),
         title: 'Error',
