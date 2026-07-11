@@ -133,6 +133,7 @@ export function SettingPage() {
     React.useState<EasyTrayEditorConfig | null>(null);
   const [configPath, setConfigPath] = React.useState('');
   const [backupPath, setBackupPath] = React.useState('');
+  const [configGeneration, setConfigGeneration] = React.useState(0);
   const [error, setError] = React.useState('');
   const [saved, setSaved] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
@@ -145,6 +146,7 @@ export function SettingPage() {
       setConfig(previewConfig);
       setSavedConfig(previewConfig);
       setConfigPath('Browser preview');
+      setConfigGeneration((generation) => generation + 1);
       return;
     }
 
@@ -158,6 +160,7 @@ export function SettingPage() {
     setSavedConfig(nextConfig);
     setConfigPath(result.snapshot.path);
     setBackupPath(result.snapshot.backupPath);
+    setConfigGeneration((generation) => generation + 1);
   }, [settingsBridge]);
 
   React.useEffect(() => {
@@ -222,7 +225,13 @@ export function SettingPage() {
           <QuickCommandSettingsSection config={config} onChange={setConfig} />
         );
       case 'commands':
-        return <CommandsSettingsSection config={config} onChange={setConfig} />;
+        return (
+          <CommandsSettingsSection
+            config={config}
+            iconTargetRevision={configGeneration}
+            onChange={setConfig}
+          />
+        );
       case 'open-in-browser':
         return (
           <OpenInBrowserSettingsSection config={config} onChange={setConfig} />
@@ -237,7 +246,13 @@ export function SettingPage() {
         return <ThemesSettingsSection config={config} onChange={setConfig} />;
       case 'general':
       default:
-        return <GeneralSettingsSection config={config} onChange={setConfig} />;
+        return (
+          <GeneralSettingsSection
+            config={config}
+            iconTargetRevision={configGeneration}
+            onChange={setConfig}
+          />
+        );
     }
   };
 

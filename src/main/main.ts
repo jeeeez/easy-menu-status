@@ -17,6 +17,7 @@ import { resolveHtmlPath } from './util';
 import { TrayController } from './tray';
 import { LinkInterceptorController } from './link-interceptor';
 import { SettingsController } from './settings';
+import { restrictWindowNavigation } from './helpers/window';
 
 class AppUpdater {
   constructor() {
@@ -81,7 +82,9 @@ const createWindow = async () => {
     },
   });
 
-  mainWindow.loadURL(resolveHtmlPath('index.html'));
+  const mainWindowUrl = resolveHtmlPath('index.html');
+  restrictWindowNavigation(mainWindow, mainWindowUrl);
+  mainWindow.loadURL(mainWindowUrl);
 
   mainWindow.on('ready-to-show', () => {
     if (!mainWindow) {

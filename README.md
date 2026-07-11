@@ -74,6 +74,7 @@ default command, web search engines, and Alfred-style commands:
       {
         "name": "rc",
         "label": "RingCentral",
+        "icon": "ringcentral.svg",
         "aliases": ["ringcentral"],
         "description": "Open",
         "action": "browser-window",
@@ -145,10 +146,32 @@ default command, web search engines, and Alfred-style commands:
 ```
 
 Within `quickCommand.commands`, `name` is the canonical text entered in Quick
-Command, `label` is the primary result text, `description` is supporting text
-shown below the label, and `action` is shown at the right edge. For
-`copy-value` and `execute-command`, `command` contains the local shell command
-to run.
+Command. Results show `name / label` as the primary text, `description` as the
+supporting text below it, the configured `icon` at the left edge, and `action`
+at the right edge. For `copy-value` and `execute-command`, `command` contains
+the local shell command to run.
+
+Custom icon files belong in EasyTray's persistent icon directory. On macOS the
+fixed location is
+`~/Library/Application Support/easy-menu-status/icons`. This directory is
+outside the installed App bundle, so replacing or reinstalling the App does not
+remove it. In Settings, an Icon field can import an image with the Finder
+picker, the Paste Image button, `Command+V` in the drop zone, or a drag from
+Finder or a webpage. Every imported image is decoded, resized when necessary,
+converted to PNG, and saved in that directory; only the generated filename is
+written to the configuration. Webpage URL imports accept public HTTPS images.
+Imported images also appear in the Icon dropdown with thumbnails. The
+`Manage Local…` action can delete any stored image without assigning it to the
+current field; deletion preserves configuration references, which then display
+the default icon.
+
+A non-absolute `icon` such as `ringcentral.svg` is resolved from the persistent
+directory first, then from the bundled `assets/icons` directory. Built-in names
+include `cat`, `flame`, `snowflake`, and `figure.run.circle.fill`. Existing
+absolute and `~/` paths remain supported for backward compatibility, but the
+Settings import controls keep custom resources persistent and the JSON
+configuration portable. Missing or invalid Quick Command icons fall back to an
+action-specific symbol; the tray uses the bundled default icon.
 
 On macOS, application search is enabled by default. EasyTray indexes apps in
 `~/Applications`, `/Applications`, and `/System/Applications`, then mixes App

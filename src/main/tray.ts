@@ -10,13 +10,14 @@ import {
 import { execSync } from 'node:child_process';
 import { spawn } from 'child_process';
 import { readFileSync, watchFile } from 'node:fs';
-import path, { resolve } from 'node:path';
+import { resolve } from 'node:path';
 import stripJsonComments from 'strip-json-comments';
 import { WindowManager } from './windows/window-manager';
 import { Logger } from './utils/Logger';
 import { WindowSizeProp } from './types';
 import { QuickCommandConfig, QuickCommandController } from './quick-command';
 import { LinkInterceptorController } from './link-interceptor';
+import { loadBundledDefaultIcon, loadConfiguredIcon } from './configured-icon';
 
 function pbcopy(data: string) {
   const proc = spawn('pbcopy', [], {
@@ -25,11 +26,6 @@ function pbcopy(data: string) {
   proc.stdin.write(data, 'utf8');
   proc.stdin.end();
 }
-
-const resourcesPath =
-  process.env.NODE_ENV === 'development'
-    ? (process.env.PWD ?? '')
-    : process.resourcesPath;
 
 interface BaseMenuItem {
   label: string;
@@ -84,6 +80,8 @@ export class TrayController {
   tray: Tray | null = null;
   trayMenu: Menu | null = null;
   config: TrayMenuConfig | null = null;
+  private configRevision = 0;
+  private iconRefreshRevision = 0;
 
   constructor() {
     app
@@ -126,6 +124,8 @@ export class TrayController {
   }
 
   async parseTrayConfig() {
+    this.configRevision += 1;
+    const revision = this.configRevision;
     try {
       const jsonWithComments = readFileSync(TrayController.PATH, 'utf-8');
       const jsonWithoutComments = stripJsonComments(jsonWithComments, {
@@ -137,14 +137,19 @@ export class TrayController {
       config.description = config.description || '';
       config.menus = config.menus || [];
       config.icon = await this.calculateTrayIcon(config.icon);
+      if (revision !== this.configRevision) return;
+      await QuickCommandController.instance().setConfig(config.quickCommand);
+      if (revision !== this.configRevision) return;
       this.config = config;
-      QuickCommandController.instance().setConfig(config.quickCommand);
+      this.iconRefreshRevision += 1;
       LinkInterceptorController.instance().setConfig(
         config.quickCommand?.openInBrowser,
       );
     } catch (error: any) {
+      if (revision !== this.configRevision) return;
       Logger.error(error.message);
-      QuickCommandController.instance().setConfig({ enabled: false });
+      await QuickCommandController.instance().setConfig({ enabled: false });
+      if (revision !== this.configRevision) return;
       LinkInterceptorController.instance().setConfig({
         interceptSystemLinks: false,
       });
@@ -154,6 +159,7 @@ export class TrayController {
         description: error.message,
         menus: [],
       };
+      this.iconRefreshRevision += 1;
     }
   }
 
@@ -167,25 +173,65 @@ export class TrayController {
   }
 
   async calculateTrayIcon(
-    icon: string | { name: string; width: number; height: number },
+    icon?: string | { name: string; width: number; height: number },
   ) {
     try {
       if (icon) {
         const iconName = typeof icon === 'string' ? icon : icon.name;
-        const iconPath = iconName.startsWith('/')
-          ? iconName
-          : path.resolve(resourcesPath, `assets/icons/${iconName}.svg`);
         const size =
           typeof icon === 'string'
             ? { width: 16, height: 16 }
             : { width: icon.width, height: icon.height };
 
-        return await nativeImage.createThumbnailFromPath(iconPath, size);
+        if (typeof iconName !== 'string' || !iconName.trim()) {
+          return nativeImage.createEmpty();
+        }
+
+        return (
+          (await loadConfiguredIcon(iconName, size)) ??
+          (await loadBundledDefaultIcon(size)) ??
+          nativeImage.createEmpty()
+        );
       }
       return nativeImage.createEmpty();
     } catch (error: any) {
       Logger.error(error.message);
       return nativeImage.createEmpty();
+    }
+  }
+
+  async refreshConfiguredIcons() {
+    this.iconRefreshRevision += 1;
+    const iconRevision = this.iconRefreshRevision;
+    const { configRevision, config } = this;
+    await QuickCommandController.instance().refreshConfiguredIcons();
+    if (
+      !config ||
+      iconRevision !== this.iconRefreshRevision ||
+      configRevision !== this.configRevision ||
+      config !== this.config
+    ) {
+      return;
+    }
+
+    try {
+      const jsonWithComments = readFileSync(TrayController.PATH, 'utf-8');
+      const jsonWithoutComments = stripJsonComments(jsonWithComments, {
+        trailingCommas: true,
+      });
+      const configuredIcon = JSON.parse(jsonWithoutComments).icon;
+      const icon = await this.calculateTrayIcon(configuredIcon);
+      if (
+        iconRevision !== this.iconRefreshRevision ||
+        configRevision !== this.configRevision ||
+        config !== this.config
+      ) {
+        return;
+      }
+      config.icon = icon;
+      this.createOrUpdateTray();
+    } catch (error: any) {
+      Logger.error(`Refresh configured icons failed: ${error.message}`);
     }
   }
 

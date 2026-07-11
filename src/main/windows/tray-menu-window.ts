@@ -20,6 +20,7 @@ export class TrayMenuWindow {
       this.$initPromise = createWindow('index.html?page=setting', {
         width: 1120,
         height: 760,
+        withPreload: true,
       }).then((window) => {
         this.window = window;
         window.setTitle('EasyTray Settings');

@@ -28,6 +28,8 @@ import {
 import { ApplicationSearchService } from './application-search';
 import { openUrlInBrowser } from './open-in-browser';
 import { BUILT_IN_GOOGLE_WEB_SEARCH_ENGINE } from '../shared/config';
+import { loadConfiguredIcon } from './configured-icon';
+import { restrictWindowNavigation } from './helpers/window';
 
 type WebSearchOpenTarget = 'external' | 'browser-window';
 type QuickCommandAction =
@@ -59,6 +61,7 @@ export interface QuickCommandWebSearchEngine {
 export interface QuickCommandConfiguredCommand {
   name: string;
   label: string;
+  icon?: string;
   command?: string;
   aliases?: string[];
   description?: string;
@@ -98,6 +101,7 @@ interface NormalizedWebSearchEngine extends QuickCommandWebSearchEngine {
 interface NormalizedQuickCommandCommand {
   name: string;
   label: string;
+  icon?: string;
   command?: string;
   aliases: string[];
   description?: string;
@@ -135,6 +139,7 @@ export interface QuickCommandViewConfig {
   commands: Array<{
     name: string;
     label: string;
+    icon?: string;
     aliases: string[];
     description?: string;
     action: QuickCommandAction;
@@ -156,6 +161,7 @@ const QUICK_COMMAND_WIDTH = 760;
 const QUICK_COMMAND_HEIGHT = 450;
 const MAX_VISIBLE_RESULTS = 5;
 const DEFAULT_COMMAND_VALUE_UPDATE_INTERVAL = 10000;
+const QUICK_COMMAND_ICON_PIXEL_SIZE = 68;
 
 const DEFAULT_WEB_SEARCH_ENGINES: NormalizedWebSearchEngine[] = [
   {
@@ -190,6 +196,9 @@ export class QuickCommandController {
   private initPromise: Promise<BrowserWindow> | null = null;
   private registeredShortcut: string | null = null;
   private dynamicLabelTimer: ReturnType<typeof setInterval> | null = null;
+  private configRevision = 0;
+  private iconRefreshRevision = 0;
+  private commandIconCache = new Map<string, string | undefined>();
   private readonly applicationSearch = new ApplicationSearchService();
   private commandValueLabelCache = new Map<
     string,
@@ -226,14 +235,71 @@ export class QuickCommandController {
       });
   }
 
-  setConfig(config?: QuickCommandConfig) {
+  async setConfig(config?: QuickCommandConfig) {
+    const revision = this.configRevision + 1;
+    this.configRevision = revision;
+    const normalizedConfig = QuickCommandController.normalizeConfig(config);
+    const commandIconCache = await QuickCommandController.loadCommandIcons(
+      normalizedConfig.commands,
+    );
+    if (revision !== this.configRevision) return;
+
     this.commandValueLabelCache.clear();
-    this.config = QuickCommandController.normalizeConfig(config);
+    this.commandIconCache = commandIconCache;
+    this.config = normalizedConfig;
+    this.iconRefreshRevision += 1;
     this.updateShortcut();
     if (this.window && !this.window.isDestroyed()) {
       this.window.webContents.send('quick-command:show', this.getViewConfig());
       this.updateDynamicLabelTimer();
     }
+  }
+
+  async refreshConfiguredIcons() {
+    this.iconRefreshRevision += 1;
+    const iconRevision = this.iconRefreshRevision;
+    const { configRevision, config } = this;
+    const commandIconCache = await QuickCommandController.loadCommandIcons(
+      config.commands,
+    );
+    if (
+      iconRevision !== this.iconRefreshRevision ||
+      configRevision !== this.configRevision ||
+      config !== this.config
+    ) {
+      return;
+    }
+
+    this.commandIconCache = commandIconCache;
+    if (this.window && !this.window.isDestroyed()) {
+      this.window.webContents.send(
+        'quick-command:update-config',
+        this.getViewConfig(),
+      );
+    }
+  }
+
+  private static async loadCommandIcons(
+    commands: NormalizedQuickCommandCommand[],
+  ) {
+    const icons = Array.from(
+      new Set(
+        commands
+          .map((command) => command.icon)
+          .filter((icon): icon is string => Boolean(icon)),
+      ),
+    );
+    const entries = await Promise.all(
+      icons.map(async (icon) => {
+        const image = await loadConfiguredIcon(icon, {
+          width: QUICK_COMMAND_ICON_PIXEL_SIZE,
+          height: QUICK_COMMAND_ICON_PIXEL_SIZE,
+        });
+        return [icon, image?.toDataURL()] as const;
+      }),
+    );
+
+    return new Map<string, string | undefined>(entries);
   }
 
   private static normalizeConfig(
@@ -364,6 +430,7 @@ export class QuickCommandController {
       ...command,
       name,
       label,
+      icon: command.icon?.trim() || undefined,
       aliases: command.aliases ?? [],
       openIn: command.openIn ?? 'external',
       description: command.description,
@@ -431,6 +498,9 @@ export class QuickCommandController {
       commands: this.config.commands.map((command) => ({
         name: command.name,
         label: this.getViewCommandLabel(command),
+        icon: command.icon
+          ? this.commandIconCache.get(command.icon)
+          : undefined,
         aliases: command.aliases,
         description: command.description,
         action: command.action,
@@ -498,7 +568,9 @@ export class QuickCommandController {
     });
 
     this.configureWindowForCurrentWorkspace(quickWindow);
-    quickWindow.loadURL(resolveHtmlPath('index.html?page=quick-command'));
+    const quickCommandUrl = resolveHtmlPath('index.html?page=quick-command');
+    restrictWindowNavigation(quickWindow, quickCommandUrl);
+    quickWindow.loadURL(quickCommandUrl);
     quickWindow.on('blur', () => this.hide());
     quickWindow.on('closed', () => {
       this.stopDynamicLabelTimer();

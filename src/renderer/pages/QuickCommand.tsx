@@ -1,5 +1,14 @@
 import React from 'react';
 import {
+  AppWindow,
+  Copy,
+  ExternalLink,
+  Power,
+  Search,
+  Settings,
+  Terminal,
+} from 'lucide-react';
+import {
   DEFAULT_QUICK_COMMAND_THEME,
   QuickCommandResolvedTheme,
   getQuickCommandThemeCssVariables,
@@ -19,6 +28,7 @@ type QuickCommandAction =
 interface QuickCommandEntry {
   name: string;
   label: string;
+  icon?: string;
   aliases: string[];
   description?: string;
   action: QuickCommandAction;
@@ -59,10 +69,6 @@ type QuickCommandStyle = React.CSSProperties & {
   [customProperty: `--${string}`]: string | number | undefined;
 };
 
-const COMMAND_TAG_MIN_WIDTH = 64;
-const COMMAND_TAG_MAX_WIDTH = 136;
-const COMMAND_TAG_CHARACTER_WIDTH = 9;
-const COMMAND_TAG_HORIZONTAL_SPACE = 30;
 const MAX_VISIBLE_RESULTS = 5;
 const previewTheme = new URLSearchParams(window.location.search).get('theme');
 const defaultPreviewTheme = isQuickCommandPresetTheme(previewTheme)
@@ -361,27 +367,33 @@ function shouldCompleteCommandInput(input: string, command: QuickCommandEntry) {
   );
 }
 
-function getCommandTagWidth(commands: QuickCommandEntry[]) {
-  const longestCommandLength = commands.reduce(
-    (longestLength, command) => Math.max(longestLength, command.name.length),
-    0,
-  );
-  const contentWidth =
-    longestCommandLength * COMMAND_TAG_CHARACTER_WIDTH +
-    COMMAND_TAG_HORIZONTAL_SPACE;
-
-  return Math.min(
-    COMMAND_TAG_MAX_WIDTH,
-    Math.max(COMMAND_TAG_MIN_WIDTH, contentWidth),
-  );
-}
-
 function isComposingInputEvent(event: React.KeyboardEvent<HTMLInputElement>) {
   return (
     event.currentTarget.dataset.quickCommandComposing === 'true' ||
     event.nativeEvent.isComposing ||
     event.nativeEvent.keyCode === 229
   );
+}
+
+function CommandActionIcon({ action }: { action: QuickCommandAction }) {
+  switch (action) {
+    case 'web-search':
+      return <Search size={21} strokeWidth={1.8} />;
+    case 'browser-window':
+      return <AppWindow size={21} strokeWidth={1.8} />;
+    case 'copy-value':
+      return <Copy size={21} strokeWidth={1.8} />;
+    case 'execute-command':
+      return <Terminal size={21} strokeWidth={1.8} />;
+    case 'open-in-browser':
+      return <ExternalLink size={21} strokeWidth={1.8} />;
+    case 'open-settings':
+      return <Settings size={21} strokeWidth={1.8} />;
+    case 'quit-app':
+      return <Power size={21} strokeWidth={1.8} />;
+    default:
+      return null;
+  }
 }
 
 export function QuickCommandPage() {
@@ -552,10 +564,9 @@ export function QuickCommandPage() {
   const resultListKey = visibleItems.map(getListItemKey).join('\n');
   const quickCommandStyle = React.useMemo<QuickCommandStyle>(
     () => ({
-      '--quick-command-tag-width': `${getCommandTagWidth(config.commands)}px`,
       ...getQuickCommandThemeCssVariables(config.theme.tokens),
     }),
-    [config.commands, config.theme.tokens],
+    [config.theme.tokens],
   );
 
   React.useEffect(() => {
@@ -713,13 +724,16 @@ export function QuickCommandPage() {
               const isApplication = item.kind === 'application';
               const label = isApplication
                 ? item.application.name
-                : item.command.label;
+                : `${item.command.name} / ${item.command.label}`;
               const description = isApplication
                 ? item.application.path
                 : item.command.description;
               const action = isApplication
                 ? 'Open'
                 : ACTION_LABELS[item.command.action];
+              const icon = isApplication
+                ? item.application.icon
+                : item.command.icon;
 
               return (
                 <button
@@ -736,28 +750,37 @@ export function QuickCommandPage() {
                   onClick={() => selectItem(item)}
                   onMouseEnter={() => setSelectedIndex(index)}
                 >
-                  {isApplication ? (
-                    <span
-                      aria-hidden="true"
-                      className="quick-command-application-icon"
-                    >
-                      {item.application.icon ? (
-                        <img
-                          alt=""
-                          draggable={false}
-                          src={item.application.icon}
-                        />
-                      ) : (
+                  <span
+                    aria-hidden="true"
+                    className={`quick-command-engine-icon quick-command-engine-icon--${
+                      isApplication ? 'application' : 'command'
+                    }`}
+                  >
+                    {icon ? (
+                      <img
+                        alt=""
+                        draggable={false}
+                        src={icon}
+                        onError={(event) => {
+                          event.currentTarget.hidden = true;
+                        }}
+                        onLoad={(event) => {
+                          event.currentTarget.hidden = false;
+                        }}
+                      />
+                    ) : null}
+                    <span className="quick-command-engine-icon-fallback">
+                      {isApplication ? (
                         <span>{item.application.name.slice(0, 1)}</span>
+                      ) : (
+                        <CommandActionIcon action={item.command.action} />
                       )}
                     </span>
-                  ) : (
-                    <kbd className="quick-command-engine-name">
-                      {item.command.name}
-                    </kbd>
-                  )}
+                  </span>
                   <span className="quick-command-engine-content">
-                    <span className="quick-command-engine-label">{label}</span>
+                    <span className="quick-command-engine-label" title={label}>
+                      {label}
+                    </span>
                     {description ? (
                       <small
                         className="quick-command-engine-description"

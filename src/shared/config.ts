@@ -41,9 +41,17 @@ export const QUICK_COMMAND_ACTIONS = [
 
 export type QuickCommandEditorAction = (typeof QUICK_COMMAND_ACTIONS)[number];
 
+export const BUILT_IN_ICON_NAMES = [
+  'cat',
+  'flame',
+  'snowflake',
+  'figure.run.circle.fill',
+] as const;
+
 export interface QuickCommandEditorEntry {
   name: string;
   label: string;
+  icon?: string;
   command?: string;
   aliases?: string[];
   description?: string;

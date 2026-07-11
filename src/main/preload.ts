@@ -1,6 +1,11 @@
 // Disable no-unused-vars, broken for spread args
 /* eslint no-unused-vars: off */
-import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron';
+import {
+  contextBridge,
+  ipcRenderer,
+  IpcRendererEvent,
+  webUtils,
+} from 'electron';
 import type {
   QuickCommandResult,
   QuickCommandViewConfig,
@@ -10,6 +15,14 @@ import type {
   EasyTrayEditorConfig,
   SettingsConfigResult,
 } from '../shared/config';
+import {
+  SETTINGS_ICON_MAX_INPUT_BYTES,
+  type SettingsIconImportRequest,
+  type SettingsIconImportResult,
+  type SettingsLocalIconDeleteResult,
+  type SettingsLocalIconListResult,
+  type SettingsIconPreviewResult,
+} from '../shared/icon-import';
 
 export type Channels = 'quick-command:show' | 'quick-command:update-config';
 export type InvokeChannels =
@@ -18,7 +31,18 @@ export type InvokeChannels =
   | 'quick-command:search-applications'
   | 'quick-command:open-application'
   | 'settings:get-config'
-  | 'settings:save-config';
+  | 'settings:save-config'
+  | 'settings:import-icon'
+  | 'settings:preview-icon'
+  | 'settings:list-local-icons'
+  | 'settings:delete-local-icon';
+
+function importIcon(request: SettingsIconImportRequest) {
+  return ipcRenderer.invoke(
+    'settings:import-icon',
+    request,
+  ) as Promise<SettingsIconImportResult>;
+}
 
 const electronHandler = {
   ipcRenderer: {
@@ -102,6 +126,64 @@ const electronHandler = {
         'settings:save-config',
         config,
       ) as Promise<SettingsConfigResult>;
+    },
+    chooseIcon() {
+      return importIcon({ source: 'picker' });
+    },
+    pasteIcon() {
+      return importIcon({ source: 'clipboard' });
+    },
+    async importDroppedFile(file: File) {
+      if (file.size > SETTINGS_ICON_MAX_INPUT_BYTES) {
+        return {
+          ok: false,
+          error: 'The image must be 10 MB or smaller.',
+        } as const;
+      }
+      let filePath = '';
+      try {
+        filePath = webUtils.getPathForFile(file);
+      } catch {
+        // Webpage-created File objects have no local path; import their bytes.
+      }
+      if (filePath) return importIcon({ source: 'path', path: filePath });
+
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      return importIcon({
+        source: 'bytes',
+        bytes,
+        fileName: file.name,
+        mimeType: file.type,
+      });
+    },
+    importIconBytes(bytes: Uint8Array, fileName?: string, mimeType?: string) {
+      if (bytes.byteLength > SETTINGS_ICON_MAX_INPUT_BYTES) {
+        return Promise.resolve({
+          ok: false,
+          error: 'The image must be 10 MB or smaller.',
+        } as const);
+      }
+      return importIcon({ source: 'bytes', bytes, fileName, mimeType });
+    },
+    importIconUrl(url: string) {
+      return importIcon({ source: 'url', url });
+    },
+    previewIcon(icon: string) {
+      return ipcRenderer.invoke(
+        'settings:preview-icon',
+        icon,
+      ) as Promise<SettingsIconPreviewResult>;
+    },
+    listLocalIcons() {
+      return ipcRenderer.invoke(
+        'settings:list-local-icons',
+      ) as Promise<SettingsLocalIconListResult>;
+    },
+    deleteLocalIcon(fileName: string) {
+      return ipcRenderer.invoke(
+        'settings:delete-local-icon',
+        fileName,
+      ) as Promise<SettingsLocalIconDeleteResult>;
     },
   },
 };

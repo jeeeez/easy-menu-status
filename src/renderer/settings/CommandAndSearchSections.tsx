@@ -1,5 +1,6 @@
 import React from 'react';
 import {
+  BUILT_IN_ICON_NAMES,
   BUILT_IN_GOOGLE_WEB_SEARCH_ENGINE_ID,
   EasyTrayEditorConfig,
   QUICK_COMMAND_ACTIONS,
@@ -8,6 +9,7 @@ import {
 } from '../../shared/config';
 import {
   CollectionToolbar,
+  IconImportField,
   NumberField,
   SelectField,
   TextField,
@@ -27,6 +29,10 @@ interface ConfigSectionProps {
   onChange: (config: EasyTrayEditorConfig) => void;
 }
 
+interface IconConfigSectionProps extends ConfigSectionProps {
+  iconTargetRevision?: number;
+}
+
 const ACTION_LABELS: Record<QuickCommandEditorEntry['action'], string> = {
   'web-search': 'Web Search',
   'browser-window': 'Browser Window',
@@ -39,16 +45,21 @@ const ACTION_LABELS: Record<QuickCommandEditorEntry['action'], string> = {
 
 interface CommandEntryEditorProps {
   entry: QuickCommandEditorEntry;
+  importTargetKey: string;
   onChange: (entry: QuickCommandEditorEntry) => void;
 }
 
-function CommandEntryEditor({ entry, onChange }: CommandEntryEditorProps) {
+function CommandEntryEditor({
+  entry,
+  importTargetKey,
+  onChange,
+}: CommandEntryEditorProps) {
   const update = (patch: Partial<QuickCommandEditorEntry>) =>
     onChange({ ...entry, ...patch });
 
   return (
     <div className="settings-form">
-      <div className="settings-field-grid settings-field-grid--three">
+      <div className="settings-field-grid">
         <TextField
           label="Name"
           value={entry.name}
@@ -59,6 +70,16 @@ function CommandEntryEditor({ entry, onChange }: CommandEntryEditorProps) {
           value={entry.label}
           onChange={(label) => update({ label })}
         />
+      </div>
+      <IconImportField
+        label="Icon"
+        options={BUILT_IN_ICON_NAMES}
+        placeholder="Built-in name or imported filename"
+        targetKey={importTargetKey}
+        value={entry.icon}
+        onChange={(icon) => update({ icon })}
+      />
+      <div className="settings-field-grid">
         <SelectField
           label="Action"
           options={QUICK_COMMAND_ACTIONS.map((action) => ({
@@ -76,20 +97,18 @@ function CommandEntryEditor({ entry, onChange }: CommandEntryEditorProps) {
             });
           }}
         />
-      </div>
-      <div className="settings-field-grid">
         <TextField
           label="Aliases"
           placeholder="alias-one, alias-two"
           value={formatStringList(entry.aliases)}
           onChange={(aliases) => update({ aliases: parseStringList(aliases) })}
         />
-        <TextField
-          label="Description"
-          value={entry.description}
-          onChange={(description) => update({ description })}
-        />
       </div>
+      <TextField
+        label="Description"
+        value={entry.description}
+        onChange={(description) => update({ description })}
+      />
       <ToggleField
         checked={entry.requiresInput}
         label="Requires input"
@@ -164,13 +183,22 @@ function CommandEntryEditor({ entry, onChange }: CommandEntryEditorProps) {
 
 export function CommandsSettingsSection({
   config,
+  iconTargetRevision = 0,
   onChange,
-}: ConfigSectionProps) {
+}: IconConfigSectionProps) {
   const quickCommand = config.quickCommand ?? {};
   const commands = quickCommand.commands ?? [];
   const [selectedIndex, setSelectedIndex] = React.useState(
     commands.length > 0 ? 0 : -1,
   );
+  const [selectionRevision, setSelectionRevision] = React.useState(0);
+
+  const selectCommand = (index: number, forceRevision = false) => {
+    setSelectedIndex(index);
+    if (forceRevision || index !== selectedIndex) {
+      setSelectionRevision((revision) => revision + 1);
+    }
+  };
 
   React.useEffect(() => {
     if (commands.length === 0) {
@@ -204,7 +232,7 @@ export function CommandsSettingsSection({
         requiresInput: false,
       },
     ]);
-    setSelectedIndex(commands.length);
+    selectCommand(commands.length, true);
   };
 
   return (
@@ -222,7 +250,7 @@ export function CommandsSettingsSection({
               updateCommands(
                 commands.filter((_command, index) => index !== selectedIndex),
               );
-              setSelectedIndex(Math.min(selectedIndex, commands.length - 2));
+              selectCommand(Math.min(selectedIndex, commands.length - 2), true);
             }}
             onDuplicate={() => {
               if (!selectedCommand) return;
@@ -235,11 +263,11 @@ export function CommandsSettingsSection({
               const nextCommands = [...commands];
               nextCommands.splice(selectedIndex + 1, 0, nextCommand);
               updateCommands(nextCommands);
-              setSelectedIndex(selectedIndex + 1);
+              selectCommand(selectedIndex + 1, true);
             }}
             onMove={(direction) => {
               updateCommands(moveArrayItem(commands, selectedIndex, direction));
-              setSelectedIndex(selectedIndex + direction);
+              selectCommand(selectedIndex + direction, true);
             }}
           />
           <div className="settings-collection-list">
@@ -250,7 +278,7 @@ export function CommandsSettingsSection({
                 }`}
                 key={command.name}
                 type="button"
-                onClick={() => setSelectedIndex(index)}
+                onClick={() => selectCommand(index)}
               >
                 <span>{command.name || 'Untitled'}</span>
                 <small>{command.label || command.action}</small>
@@ -262,6 +290,7 @@ export function CommandsSettingsSection({
           {selectedCommand ? (
             <CommandEntryEditor
               entry={selectedCommand}
+              importTargetKey={`command:${iconTargetRevision}:${selectionRevision}:${selectedIndex}`}
               onChange={(entry) =>
                 updateCommands(
                   commands.map((command, index) =>

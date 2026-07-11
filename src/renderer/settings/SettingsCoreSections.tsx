@@ -1,5 +1,6 @@
 import React from 'react';
 import {
+  BUILT_IN_ICON_NAMES,
   EasyTrayEditorConfig,
   QuickCommandEditorConfig,
 } from '../../shared/config';
@@ -10,8 +11,8 @@ import {
 } from '../../shared/quick-command-theme';
 import {
   BrowserProfilesEditor,
-  ComboField,
   DomainProfilesEditor,
+  IconImportField,
   NumberField,
   SelectField,
   TextField,
@@ -21,6 +22,10 @@ import {
 interface ConfigSectionProps {
   config: EasyTrayEditorConfig;
   onChange: (config: EasyTrayEditorConfig) => void;
+}
+
+interface IconConfigSectionProps extends ConfigSectionProps {
+  iconTargetRevision?: number;
 }
 
 const THEME_LABELS: Record<QuickCommandPresetTheme, string> = {
@@ -53,13 +58,6 @@ const THEME_SWATCHES: Record<
   nord: ['#2e3440', '#434c5e', '#88c0d0'],
   dracula: ['#282a36', '#44475a', '#ff79c6'],
 };
-
-const TRAY_ICON_OPTIONS = [
-  'cat',
-  'flame',
-  'snowflake',
-  'figure.run.circle.fill',
-] as const;
 
 interface DefaultCommandCandidate {
   value: string;
@@ -129,8 +127,9 @@ function getDefaultCommandOptions(quickCommand: QuickCommandEditorConfig) {
 
 export function GeneralSettingsSection({
   config,
+  iconTargetRevision = 0,
   onChange,
-}: ConfigSectionProps) {
+}: IconConfigSectionProps) {
   const icon =
     typeof config.icon === 'string'
       ? { name: config.icon, width: 16, height: 16 }
@@ -155,11 +154,12 @@ export function GeneralSettingsSection({
           />
         </div>
         <div className="settings-divider" />
-        <div className="settings-field-grid settings-field-grid--three">
-          <ComboField
+        <div className="settings-field-grid settings-field-grid--icon-settings">
+          <IconImportField
             label="Icon"
-            options={TRAY_ICON_OPTIONS}
-            placeholder="Select or enter an icon/path"
+            options={BUILT_IN_ICON_NAMES}
+            placeholder="Built-in name or imported filename"
+            targetKey={`general:${iconTargetRevision}`}
             value={icon.name}
             onChange={(name) =>
               onChange({ ...config, icon: { ...icon, name } })
