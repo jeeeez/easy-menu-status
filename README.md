@@ -8,7 +8,7 @@ npm start
 
 ## Settings UI
 
-Open Quick Command and run `settings` to edit `~/easy-tray.config.json`
+Open Quick Command and run `Settings` to edit `~/easy-tray.config.json`
 without changing the file manually. The editor supports General, Quick
 Command, Commands, Web Search, Link Routing, Tray Menu, and Custom Themes
 settings. Use the Save button or `CommandOrControl+S` to apply changes

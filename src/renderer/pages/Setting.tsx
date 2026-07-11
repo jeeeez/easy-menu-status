@@ -76,7 +76,7 @@ const PREVIEW_CONFIG: EasyTrayEditorConfig = {
     theme: 'macos-glass',
     commands: [
       {
-        name: 'settings',
+        name: 'Settings',
         label: 'Open Settings',
         aliases: ['config'],
         description: 'Open',

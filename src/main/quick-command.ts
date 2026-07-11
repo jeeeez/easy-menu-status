@@ -155,7 +155,7 @@ const DEFAULT_WEB_SEARCH_ENGINES: NormalizedWebSearchEngine[] = [
 ];
 
 const SETTINGS_COMMAND: NormalizedQuickCommandCommand = {
-  name: 'settings',
+  name: 'Settings',
   label: 'Settings',
   aliases: ['preferences', 'config'],
   description: 'EasyTray preferences',

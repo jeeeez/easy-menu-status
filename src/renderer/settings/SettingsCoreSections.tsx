@@ -1,5 +1,8 @@
 import React from 'react';
-import { EasyTrayEditorConfig } from '../../shared/config';
+import {
+  EasyTrayEditorConfig,
+  QuickCommandEditorConfig,
+} from '../../shared/config';
 import {
   DEFAULT_QUICK_COMMAND_THEME,
   QUICK_COMMAND_PRESET_THEMES,
@@ -9,6 +12,7 @@ import {
   ComboField,
   NumberField,
   ProfilesEditor,
+  SelectField,
   TextField,
   ToggleField,
 } from './SettingsControls';
@@ -55,6 +59,72 @@ const TRAY_ICON_OPTIONS = [
   'snowflake',
   'figure.run.circle.fill',
 ] as const;
+
+interface DefaultCommandCandidate {
+  value: string;
+  label: string;
+  identifiers: string[];
+}
+
+function getDefaultCommandOptions(quickCommand: QuickCommandEditorConfig) {
+  const candidates: DefaultCommandCandidate[] = [];
+  const canonicalNames = new Set<string>();
+  const addCandidate = (
+    rawValue: string,
+    rawLabel: string,
+    aliases: string[] = [],
+  ) => {
+    const value = rawValue.trim();
+    const key = value.toLowerCase();
+    if (!value || canonicalNames.has(key)) return;
+
+    canonicalNames.add(key);
+    candidates.push({
+      value,
+      label: rawLabel.trim() || value,
+      identifiers: [value, ...aliases].map((identifier) =>
+        identifier.toLowerCase(),
+      ),
+    });
+  };
+
+  (quickCommand.commands ?? []).forEach((command) => {
+    const label =
+      command.label.toLowerCase() === command.name.toLowerCase()
+        ? command.name
+        : `${command.name} - ${command.label}`;
+    addCandidate(command.name, label, command.aliases);
+  });
+  addCandidate('Settings', 'Settings', ['preferences', 'config']);
+
+  if (quickCommand.webSearch?.enabled !== false) {
+    (quickCommand.webSearch?.engines ?? []).forEach((engine) => {
+      const command =
+        engine.command || engine.name.toLowerCase().trim().replace(/\s+/g, '-');
+      addCandidate(command, `${command} - ${engine.name}`, engine.aliases);
+    });
+  }
+
+  const currentValue = quickCommand.defaultCommand?.trim() ?? '';
+  const matchedCandidate = currentValue
+    ? candidates.find((candidate) =>
+        candidate.identifiers.includes(currentValue.toLowerCase()),
+      )
+    : undefined;
+  const options = candidates.map((candidate) => ({
+    label: candidate.label,
+    value: candidate === matchedCandidate ? currentValue : candidate.value,
+  }));
+
+  if (currentValue && !matchedCandidate) {
+    options.unshift({
+      label: `${currentValue} (Current)`,
+      value: currentValue,
+    });
+  }
+
+  return [{ label: 'Automatic', value: '' }, ...options];
+}
 
 export function GeneralSettingsSection({
   config,
@@ -129,6 +199,7 @@ export function QuickCommandSettingsSection({
   const quickCommand = config.quickCommand ?? {};
   const customThemes = quickCommand.themes ?? {};
   const selectedTheme = quickCommand.theme ?? DEFAULT_QUICK_COMMAND_THEME;
+  const defaultCommandOptions = getDefaultCommandOptions(quickCommand);
   const updateQuickCommand = (patch: Partial<typeof quickCommand>) =>
     onChange({
       ...config,
@@ -153,8 +224,9 @@ export function QuickCommandSettingsSection({
             value={quickCommand.shortcut}
             onChange={(shortcut) => updateQuickCommand({ shortcut })}
           />
-          <TextField
+          <SelectField
             label="Default command"
+            options={defaultCommandOptions}
             value={quickCommand.defaultCommand}
             onChange={(defaultCommand) =>
               updateQuickCommand({ defaultCommand })
