@@ -44,11 +44,42 @@ interface QuickCommandViewConfig {
   commands: QuickCommandEntry[];
 }
 
+interface TextMatchRange {
+  start: number;
+  end: number;
+}
+
 interface QuickCommandApplicationResult {
   name: string;
   path: string;
   icon?: string;
+  matchRanges: TextMatchRange[];
   score: number;
+}
+
+interface TextMatch {
+  ranges: TextMatchRange[];
+  score: number;
+}
+
+interface IdentifierProjection {
+  sourceSpans: Array<
+    TextMatchRange & {
+      normalizedStart: number;
+      normalizedEnd: number;
+    }
+  >;
+  text: string;
+}
+
+interface CommandMatch extends TextMatch {
+  aliasIndex?: number;
+  field: 'name' | 'alias' | 'label';
+}
+
+interface RankedCommand {
+  command: QuickCommandEntry;
+  match?: CommandMatch;
 }
 
 type QuickCommandListItem =
@@ -56,6 +87,7 @@ type QuickCommandListItem =
       kind: 'command';
       command: QuickCommandEntry;
       index: number;
+      match?: CommandMatch;
       score: number;
     }
   | {
@@ -173,11 +205,58 @@ function orderCommands(commands: QuickCommandEntry[], defaultCommand: string) {
   });
 }
 
-function getIdentifierWords(identifier: string) {
-  return identifier.split(/[\s._:/-]+/).filter(Boolean);
+function getIdentifierWordRanges(identifier: string) {
+  return Array.from(identifier.matchAll(/[^\s._:/-]+/g)).map((match) => ({
+    start: match.index,
+    end: match.index + match[0].length,
+  }));
 }
 
-function getIdentifierMatchScore(
+function createIdentifierProjection(identifier: string): IdentifierProjection {
+  const sourceSpans: IdentifierProjection['sourceSpans'] = [];
+  let sourceOffset = 0;
+  let normalizedOffset = 0;
+  Array.from(identifier).forEach((character) => {
+    const sourceStart = sourceOffset;
+    sourceOffset += character.length;
+    const normalizedEnd = identifier
+      .slice(0, sourceOffset)
+      .toLowerCase().length;
+    sourceSpans.push({
+      start: sourceStart,
+      end: sourceOffset,
+      normalizedStart: normalizedOffset,
+      normalizedEnd,
+    });
+    normalizedOffset = normalizedEnd;
+  });
+  return { sourceSpans, text: identifier.toLowerCase() };
+}
+
+function createTextMatch(
+  score: number,
+  projection: IdentifierProjection,
+  normalizedStart: number,
+  normalizedEnd: number,
+): TextMatch | undefined {
+  const matchingSpans = projection.sourceSpans.filter(
+    (span) =>
+      span.normalizedEnd > normalizedStart &&
+      span.normalizedStart < normalizedEnd,
+  );
+  if (!matchingSpans.length) return undefined;
+  return {
+    score,
+    ranges: [
+      {
+        start: matchingSpans[0].start,
+        end: matchingSpans[matchingSpans.length - 1].end,
+      },
+    ],
+  };
+}
+
+function getIdentifierMatch(
   identifier: string,
   query: string,
   scores: {
@@ -188,93 +267,131 @@ function getIdentifierMatchScore(
     contains: number;
   },
 ) {
-  if (identifier === query) {
-    return scores.exact;
+  const projection = createIdentifierProjection(identifier);
+  const normalizedIdentifier = projection.text;
+  if (normalizedIdentifier === query) {
+    return createTextMatch(
+      scores.exact,
+      projection,
+      0,
+      normalizedIdentifier.length,
+    );
   }
 
   if (
     scores.inputExtendsIdentifier &&
-    inputStartsWithIdentifier(query, identifier)
+    inputStartsWithIdentifier(query, normalizedIdentifier)
   ) {
-    return scores.inputExtendsIdentifier;
+    return createTextMatch(
+      scores.inputExtendsIdentifier,
+      projection,
+      0,
+      normalizedIdentifier.length,
+    );
   }
 
-  if (identifier.startsWith(query)) {
-    return scores.prefix;
+  if (normalizedIdentifier.startsWith(query)) {
+    return createTextMatch(scores.prefix, projection, 0, query.length);
   }
 
-  if (
-    scores.wordPrefix &&
-    getIdentifierWords(identifier).some((word) => word.startsWith(query))
-  ) {
-    return scores.wordPrefix;
+  if (scores.wordPrefix) {
+    const matchingWord = getIdentifierWordRanges(normalizedIdentifier).find(
+      ({ start, end }) =>
+        normalizedIdentifier.slice(start, end).startsWith(query),
+    );
+    if (matchingWord) {
+      return createTextMatch(
+        scores.wordPrefix,
+        projection,
+        matchingWord.start,
+        matchingWord.start + query.length,
+      );
+    }
   }
 
-  if (identifier.includes(query)) {
-    return scores.contains;
+  const containsIndex = normalizedIdentifier.indexOf(query);
+  if (containsIndex >= 0) {
+    return createTextMatch(
+      scores.contains,
+      projection,
+      containsIndex,
+      containsIndex + query.length,
+    );
   }
 
-  return 0;
+  return undefined;
 }
 
-function getCommandMatchScore(command: QuickCommandEntry, input: string) {
+function getCommandMatch(
+  command: QuickCommandEntry,
+  input: string,
+): CommandMatch | undefined {
   const { firstWordLower } = splitInput(input);
-  if (!firstWordLower) {
-    return 0;
-  }
+  if (!firstWordLower) return undefined;
 
-  const nameScore = getIdentifierMatchScore(
-    command.name.toLowerCase(),
-    firstWordLower,
-    {
-      exact: MATCH_SCORE.nameExact,
-      inputExtendsIdentifier: MATCH_SCORE.nameInputExtendsIdentifier,
-      prefix: MATCH_SCORE.namePrefix,
-      contains: MATCH_SCORE.nameContains,
-    },
-  );
-  const aliasScore = Math.max(
-    0,
-    ...command.aliases.map((alias) =>
-      getIdentifierMatchScore(alias.toLowerCase(), firstWordLower, {
-        exact: MATCH_SCORE.aliasExact,
-        inputExtendsIdentifier: MATCH_SCORE.aliasInputExtendsIdentifier,
-        prefix: MATCH_SCORE.aliasPrefix,
-        contains: MATCH_SCORE.aliasContains,
-      }),
-    ),
-  );
-  const labelScore = getIdentifierMatchScore(
-    command.label.toLowerCase(),
-    firstWordLower,
-    {
-      exact: MATCH_SCORE.labelExact,
-      prefix: MATCH_SCORE.labelPrefix,
-      wordPrefix: MATCH_SCORE.labelWordPrefix,
-      contains: MATCH_SCORE.labelContains,
-    },
-  );
+  const candidates: CommandMatch[] = [];
+  const nameMatch = getIdentifierMatch(command.name, firstWordLower, {
+    exact: MATCH_SCORE.nameExact,
+    inputExtendsIdentifier: MATCH_SCORE.nameInputExtendsIdentifier,
+    prefix: MATCH_SCORE.namePrefix,
+    contains: MATCH_SCORE.nameContains,
+  });
+  if (nameMatch) candidates.push({ ...nameMatch, field: 'name' });
 
-  return Math.max(nameScore, aliasScore, labelScore);
+  command.aliases.forEach((alias, aliasIndex) => {
+    const aliasMatch = getIdentifierMatch(alias, firstWordLower, {
+      exact: MATCH_SCORE.aliasExact,
+      inputExtendsIdentifier: MATCH_SCORE.aliasInputExtendsIdentifier,
+      prefix: MATCH_SCORE.aliasPrefix,
+      contains: MATCH_SCORE.aliasContains,
+    });
+    if (aliasMatch) {
+      candidates.push({
+        ...aliasMatch,
+        aliasIndex,
+        field: 'alias',
+      });
+    }
+  });
+
+  const labelMatch = getIdentifierMatch(command.label, firstWordLower, {
+    exact: MATCH_SCORE.labelExact,
+    prefix: MATCH_SCORE.labelPrefix,
+    wordPrefix: MATCH_SCORE.labelWordPrefix,
+    contains: MATCH_SCORE.labelContains,
+  });
+  if (labelMatch) candidates.push({ ...labelMatch, field: 'label' });
+
+  return candidates.reduce<CommandMatch | undefined>(
+    (bestMatch, candidate) =>
+      !bestMatch || candidate.score > bestMatch.score ? candidate : bestMatch,
+    undefined,
+  );
 }
 
 function rankCommands(
   commands: QuickCommandEntry[],
   input: string,
   defaultCommand: string,
-) {
+): RankedCommand[] {
   const { firstWordLower } = splitInput(input);
   if (!firstWordLower) {
-    return orderCommands(commands, defaultCommand);
+    return orderCommands(commands, defaultCommand).map((command) => ({
+      command,
+    }));
   }
 
   return commands
-    .map((command, index) => ({
-      command,
-      index,
-      isDefault: isDefaultCommand(command, defaultCommand),
-      score: getCommandMatchScore(command, input),
-    }))
+    .map((command, index) => {
+      const match = getCommandMatch(command, input);
+      return {
+        command,
+        index,
+        isDefault: isDefaultCommand(command, defaultCommand),
+        match,
+        score: match?.score ?? 0,
+      };
+    })
     .filter(({ score }) => score > 0)
     .sort((leftCommand, rightCommand) => {
       if (leftCommand.score !== rightCommand.score) {
@@ -285,7 +402,7 @@ function rankCommands(
       }
       return leftCommand.index - rightCommand.index;
     })
-    .map(({ command }) => command);
+    .map(({ command, match }) => ({ command, match }));
 }
 
 function getListItemKey(item: QuickCommandListItem) {
@@ -372,6 +489,55 @@ function isComposingInputEvent(event: React.KeyboardEvent<HTMLInputElement>) {
     event.currentTarget.dataset.quickCommandComposing === 'true' ||
     event.nativeEvent.isComposing ||
     event.nativeEvent.keyCode === 229
+  );
+}
+
+function normalizeMatchRanges(text: string, ranges: TextMatchRange[]) {
+  const normalizedRanges: TextMatchRange[] = [];
+  ranges
+    .map(({ start, end }) => ({
+      start: Math.max(0, Math.min(text.length, Math.floor(start))),
+      end: Math.max(0, Math.min(text.length, Math.ceil(end))),
+    }))
+    .filter(({ start, end }) => end > start)
+    .sort((left, right) => left.start - right.start)
+    .forEach((range) => {
+      const previousRange = normalizedRanges.at(-1);
+      if (!previousRange || range.start > previousRange.end) {
+        normalizedRanges.push(range);
+      } else {
+        previousRange.end = Math.max(previousRange.end, range.end);
+      }
+    });
+  return normalizedRanges;
+}
+
+function HighlightedText({
+  ranges,
+  text,
+}: {
+  ranges: TextMatchRange[];
+  text: string;
+}) {
+  const normalizedRanges = normalizeMatchRanges(text, ranges);
+  if (!normalizedRanges.length) return text;
+
+  let cursor = 0;
+  return (
+    <>
+      {normalizedRanges.map((range) => {
+        const leadingText = text.slice(cursor, range.start);
+        const matchedText = text.slice(range.start, range.end);
+        cursor = range.end;
+        return (
+          <React.Fragment key={`${range.start}:${range.end}`}>
+            {leadingText}
+            <mark className="quick-command-match">{matchedText}</mark>
+          </React.Fragment>
+        );
+      })}
+      {text.slice(cursor)}
+    </>
   );
 }
 
@@ -522,11 +688,12 @@ export function QuickCommandPage() {
       ? applicationSearch.results
       : [];
   const commandItems: QuickCommandListItem[] = rankedCommands.map(
-    (command, index) => ({
+    ({ command, match }, index) => ({
       kind: 'command',
       command,
       index,
-      score: getCommandMatchScore(command, input),
+      match,
+      score: match?.score ?? 0,
     }),
   );
   const applicationItems: QuickCommandListItem[] = matchingApplications.map(
@@ -725,9 +892,20 @@ export function QuickCommandPage() {
               const label = isApplication
                 ? item.application.name
                 : `${item.command.name} / ${item.command.label}`;
-              const description = isApplication
-                ? item.application.path
-                : item.command.description;
+              const matchedAlias =
+                item.kind === 'command' &&
+                item.match?.field === 'alias' &&
+                item.match.aliasIndex !== undefined
+                  ? item.command.aliases[item.match.aliasIndex]
+                  : undefined;
+              let description: string | undefined;
+              if (isApplication) {
+                description = item.application.path;
+              } else if (matchedAlias) {
+                description = `Matched alias: ${matchedAlias}`;
+              } else {
+                description = item.command.description;
+              }
               const action = isApplication
                 ? 'Open'
                 : ACTION_LABELS[item.command.action];
@@ -779,14 +957,49 @@ export function QuickCommandPage() {
                   </span>
                   <span className="quick-command-engine-content">
                     <span className="quick-command-engine-label" title={label}>
-                      {label}
+                      {item.kind === 'application' ? (
+                        <HighlightedText
+                          ranges={item.application.matchRanges ?? []}
+                          text={item.application.name}
+                        />
+                      ) : (
+                        <>
+                          <HighlightedText
+                            ranges={
+                              item.match?.field === 'name'
+                                ? item.match.ranges
+                                : []
+                            }
+                            text={item.command.name}
+                          />
+                          {' / '}
+                          <HighlightedText
+                            ranges={
+                              item.match?.field === 'label'
+                                ? item.match.ranges
+                                : []
+                            }
+                            text={item.command.label}
+                          />
+                        </>
+                      )}
                     </span>
                     {description ? (
                       <small
                         className="quick-command-engine-description"
                         title={isApplication ? description : undefined}
                       >
-                        {description}
+                        {matchedAlias && item.kind === 'command' ? (
+                          <>
+                            Alias:{' '}
+                            <HighlightedText
+                              ranges={item.match?.ranges ?? []}
+                              text={matchedAlias}
+                            />
+                          </>
+                        ) : (
+                          description
+                        )}
                       </small>
                     ) : null}
                   </span>

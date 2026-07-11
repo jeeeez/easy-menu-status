@@ -159,11 +159,15 @@ remove it. In Settings, an Icon field can import an image with the Finder
 picker, the Paste Image button, `Command+V` in the drop zone, or a drag from
 Finder or a webpage. Every imported image is decoded, resized when necessary,
 converted to PNG, and saved in that directory; only the generated filename is
-written to the configuration. Webpage URL imports accept public HTTPS images.
+written to the configuration. The Finder picker, clipboard paste, and Finder
+or webpage drag imports accept simple, static, self-contained SVG files up to
+2 MB. SVG content is validated and rasterized to PNG instead of being stored
+as active XML. Webpage URL imports accept public HTTPS images, including
+responses served as `image/svg+xml`.
 Imported images also appear in the Icon dropdown with thumbnails. The
 `Manage Local…` action can delete any stored image without assigning it to the
-current field; deletion preserves configuration references, which then display
-the default icon.
+current field, or reveal the image in Finder. Deletion preserves configuration
+references, which then display the default icon.
 
 A non-absolute `icon` such as `ringcentral.svg` is resolved from the persistent
 directory first, then from the bundled `assets/icons` directory. Built-in names

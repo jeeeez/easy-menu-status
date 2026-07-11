@@ -27,56 +27,271 @@ const ADDITIONAL_APPLICATIONS: IndexedApplication[] = [
   },
 ];
 
+export interface TextMatchRange {
+  start: number;
+  end: number;
+}
+
 export interface ApplicationSearchResult extends IndexedApplication {
   icon?: string;
+  matchRanges: TextMatchRange[];
   score: number;
 }
 
-function normalizeSearchText(value: string) {
-  return value
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .trim();
+interface NormalizedSearchUnit {
+  character: string;
+  sourceStart: number;
+  sourceEnd: number;
 }
 
-function splitSearchWords(value: string) {
-  return value.split(/[\s._:/-]+/).filter(Boolean);
+interface NormalizedSearchProjection {
+  text: string;
+  units: NormalizedSearchUnit[];
 }
 
-function isSubsequence(query: string, value: string) {
-  let queryIndex = 0;
-  for (let valueIndex = 0; valueIndex < value.length; valueIndex += 1) {
-    if (value[valueIndex] === query[queryIndex]) {
-      queryIndex += 1;
-      if (queryIndex === query.length) {
-        return true;
-      }
+interface LowercaseSourceSpan {
+  normalizedStart: number;
+  normalizedEnd: number;
+  sourceStart: number;
+  sourceEnd: number;
+}
+
+interface ApplicationMatch {
+  matchRanges: TextMatchRange[];
+  score: number;
+}
+
+const SEARCH_SEPARATOR_PATTERN = /[\s._:/-]/;
+
+function lowercaseSearchUnits(units: NormalizedSearchUnit[]) {
+  const sourceText = units.map(({ character }) => character).join('');
+  const normalizedText = sourceText.toLowerCase();
+  const spans: LowercaseSourceSpan[] = [];
+  let sourcePrefix = '';
+  let normalizedOffset = 0;
+  units.forEach((unit) => {
+    sourcePrefix += unit.character;
+    const normalizedEnd = sourcePrefix.toLowerCase().length;
+    spans.push({
+      normalizedStart: normalizedOffset,
+      normalizedEnd,
+      sourceStart: unit.sourceStart,
+      sourceEnd: unit.sourceEnd,
+    });
+    normalizedOffset = normalizedEnd;
+  });
+
+  const normalizedUnits: NormalizedSearchUnit[] = [];
+  normalizedOffset = 0;
+  Array.from(normalizedText).forEach((character) => {
+    const normalizedEnd = normalizedOffset + character.length;
+    const overlappingSpans = spans.filter(
+      (span) =>
+        span.normalizedEnd > normalizedOffset &&
+        span.normalizedStart < normalizedEnd,
+    );
+    if (overlappingSpans.length) {
+      normalizedUnits.push({
+        character,
+        sourceStart: Math.min(
+          ...overlappingSpans.map(({ sourceStart }) => sourceStart),
+        ),
+        sourceEnd: Math.max(
+          ...overlappingSpans.map(({ sourceEnd }) => sourceEnd),
+        ),
+      });
     }
-  }
-  return false;
+    normalizedOffset = normalizedEnd;
+  });
+  return normalizedUnits;
 }
 
-function getApplicationMatchScore(name: string, query: string) {
-  const normalizedName = normalizeSearchText(name);
-  const normalizedQuery = normalizeSearchText(query);
-  if (!normalizedQuery) return 0;
-  if (normalizedName === normalizedQuery) return 990;
-  if (normalizedName.startsWith(normalizedQuery)) return 860;
+function normalizeSearchProjection(value: string): NormalizedSearchProjection {
+  const decomposedUnits: NormalizedSearchUnit[] = [];
+  let sourceOffset = 0;
+  Array.from(value).forEach((character) => {
+    const sourceStart = sourceOffset;
+    sourceOffset += character.length;
+    const normalizedCharacters = Array.from(
+      character.normalize('NFKD').replace(/[\u0300-\u036f]/g, ''),
+    );
+    if (!normalizedCharacters.length && decomposedUnits.length > 0) {
+      decomposedUnits[decomposedUnits.length - 1].sourceEnd = sourceOffset;
+    }
+    normalizedCharacters.forEach((normalizedCharacter) => {
+      decomposedUnits.push({
+        character: normalizedCharacter,
+        sourceStart,
+        sourceEnd: sourceOffset,
+      });
+    });
+  });
 
-  const nameWords = splitSearchWords(normalizedName);
-  if (nameWords.some((word) => word.startsWith(normalizedQuery))) return 820;
+  const units = lowercaseSearchUnits(decomposedUnits);
 
-  const compactName = nameWords.join('');
-  const compactQuery = splitSearchWords(normalizedQuery).join('');
-  const initials = nameWords.map((word) => word[0]).join('');
-  if (compactQuery.length > 1 && initials.startsWith(compactQuery)) return 780;
-  if (normalizedName.includes(normalizedQuery)) return 620;
-  if (compactName.includes(compactQuery)) return 580;
-  if (compactQuery.length > 1 && isSubsequence(compactQuery, compactName)) {
-    return 380;
+  let start = 0;
+  let end = units.length;
+  while (start < end && !units[start].character.trim()) start += 1;
+  while (end > start && !units[end - 1].character.trim()) end -= 1;
+  const trimmedUnits = units.slice(start, end);
+  return {
+    text: trimmedUnits.map(({ character }) => character).join(''),
+    units: trimmedUnits,
+  };
+}
+
+function normalizeSearchText(value: string) {
+  return normalizeSearchProjection(value).text;
+}
+
+function splitProjectionWords(projection: NormalizedSearchProjection) {
+  const words: NormalizedSearchUnit[][] = [];
+  let currentWord: NormalizedSearchUnit[] = [];
+  projection.units.forEach((unit) => {
+    if (SEARCH_SEPARATOR_PATTERN.test(unit.character)) {
+      if (currentWord.length) words.push(currentWord);
+      currentWord = [];
+    } else {
+      currentWord.push(unit);
+    }
+  });
+  if (currentWord.length) words.push(currentWord);
+  return words;
+}
+
+function projectUnits(
+  units: NormalizedSearchUnit[],
+): NormalizedSearchProjection {
+  return {
+    text: units.map(({ character }) => character).join(''),
+    units,
+  };
+}
+
+function findContiguousUnitStart(
+  valueUnits: NormalizedSearchUnit[],
+  queryUnits: NormalizedSearchUnit[],
+) {
+  if (!queryUnits.length) return -1;
+  let result = -1;
+  for (
+    let valueIndex = 0;
+    valueIndex <= valueUnits.length - queryUnits.length && result < 0;
+    valueIndex += 1
+  ) {
+    let matches = true;
+    for (
+      let queryIndex = 0;
+      queryIndex < queryUnits.length && matches;
+      queryIndex += 1
+    ) {
+      matches =
+        valueUnits[valueIndex + queryIndex].character ===
+        queryUnits[queryIndex].character;
+    }
+    if (matches) result = valueIndex;
   }
-  return 0;
+  return result;
+}
+
+function unitsToMatchRanges(units: NormalizedSearchUnit[]) {
+  const ranges: TextMatchRange[] = [];
+  [...units]
+    .sort((left, right) => left.sourceStart - right.sourceStart)
+    .forEach((unit) => {
+      const previousRange = ranges.at(-1);
+      if (!previousRange || unit.sourceStart > previousRange.end) {
+        ranges.push({ start: unit.sourceStart, end: unit.sourceEnd });
+      } else {
+        previousRange.end = Math.max(previousRange.end, unit.sourceEnd);
+      }
+    });
+  return ranges;
+}
+
+function createApplicationMatch(
+  score: number,
+  units: NormalizedSearchUnit[],
+): ApplicationMatch {
+  return { score, matchRanges: unitsToMatchRanges(units) };
+}
+
+function getApplicationMatch(name: string, query: string): ApplicationMatch {
+  const nameProjection = normalizeSearchProjection(name);
+  const queryProjection = normalizeSearchProjection(query);
+  const normalizedName = nameProjection.text;
+  const normalizedQuery = queryProjection.text;
+  if (!normalizedQuery) return { score: 0, matchRanges: [] };
+  if (normalizedName === normalizedQuery) {
+    return createApplicationMatch(990, nameProjection.units);
+  }
+  if (
+    findContiguousUnitStart(nameProjection.units, queryProjection.units) === 0
+  ) {
+    return createApplicationMatch(
+      860,
+      nameProjection.units.slice(0, queryProjection.units.length),
+    );
+  }
+
+  const nameWords = splitProjectionWords(nameProjection);
+  const matchingWord = nameWords.find(
+    (word) => findContiguousUnitStart(word, queryProjection.units) === 0,
+  );
+  if (matchingWord) {
+    return createApplicationMatch(
+      820,
+      matchingWord.slice(0, queryProjection.units.length),
+    );
+  }
+
+  const compactNameProjection = projectUnits(nameWords.flat());
+  const compactQueryProjection = projectUnits(
+    splitProjectionWords(queryProjection).flat(),
+  );
+  const initialsProjection = projectUnits(nameWords.map((word) => word[0]));
+  if (
+    compactQueryProjection.text.length > 1 &&
+    findContiguousUnitStart(
+      initialsProjection.units,
+      compactQueryProjection.units,
+    ) === 0
+  ) {
+    return createApplicationMatch(
+      780,
+      initialsProjection.units.slice(0, compactQueryProjection.units.length),
+    );
+  }
+
+  const nameContainsIndex = findContiguousUnitStart(
+    nameProjection.units,
+    queryProjection.units,
+  );
+  if (nameContainsIndex >= 0) {
+    return createApplicationMatch(
+      620,
+      nameProjection.units.slice(
+        nameContainsIndex,
+        nameContainsIndex + queryProjection.units.length,
+      ),
+    );
+  }
+
+  const compactContainsIndex = findContiguousUnitStart(
+    compactNameProjection.units,
+    compactQueryProjection.units,
+  );
+  if (compactContainsIndex >= 0) {
+    return createApplicationMatch(
+      580,
+      compactNameProjection.units.slice(
+        compactContainsIndex,
+        compactContainsIndex + compactQueryProjection.units.length,
+      ),
+    );
+  }
+
+  return { score: 0, matchRanges: [] };
 }
 
 function getBundleIconName(infoPlistPath: string) {
@@ -226,10 +441,14 @@ export class ApplicationSearchService {
       Math.max(1, Math.floor(limit)),
     );
     const matches = applications
-      .map((application) => ({
-        ...application,
-        score: getApplicationMatchScore(application.name, query),
-      }))
+      .map((application) => {
+        const match = getApplicationMatch(application.name, query);
+        return {
+          ...application,
+          score: match.score,
+          matchRanges: match.matchRanges,
+        };
+      })
       .filter((application) => application.score > 0)
       .sort(
         (left, right) =>

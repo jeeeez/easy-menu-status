@@ -491,6 +491,18 @@ export function IconImportField({
     setStatus({ kind: 'idle' });
   }, [targetKey]);
 
+  React.useEffect(() => {
+    const clearHiddenWindowStatus = () => {
+      if (document.visibilityState === 'visible' && !operationRef.current) {
+        setStatus({ kind: 'idle' });
+      }
+    };
+    document.addEventListener('visibilitychange', clearHiddenWindowStatus);
+    return () => {
+      document.removeEventListener('visibilitychange', clearHiddenWindowStatus);
+    };
+  }, []);
+
   React.useEffect(
     () => () => {
       mountedRef.current = false;
@@ -695,6 +707,30 @@ export function IconImportField({
     operationRef.current = false;
   };
 
+  const showLocalIconInFinder = async (fileName: string) => {
+    if (disabled || isBusy) return;
+
+    try {
+      const result = await window.electron.settings.revealLocalIcon(fileName);
+      if (!mountedRef.current) return;
+      setStatus(
+        result.ok
+          ? {
+              kind: 'success',
+              message: `Shown ${result.fileName} in Finder.`,
+            }
+          : { kind: 'error', message: result.error },
+      );
+    } catch {
+      if (mountedRef.current) {
+        setStatus({
+          kind: 'error',
+          message: 'The local icon could not be shown in Finder.',
+        });
+      }
+    }
+  };
+
   const getUrlImport = (url: string): IconImportFallback => {
     const parsedUrl = new URL(url);
     if (parsedUrl.protocol === 'http:') {
@@ -822,7 +858,12 @@ export function IconImportField({
         onPaste={(event) => {
           if (disabled || isBusy) return;
           const handled = importTransfer(event.clipboardData);
-          if (handled) event.preventDefault();
+          if (!handled) {
+            runImport('Reading image from clipboard…', () =>
+              window.electron.settings.pasteIcon(),
+            );
+          }
+          event.preventDefault();
         }}
       >
         <div
@@ -920,15 +961,27 @@ export function IconImportField({
                   )}
                 </span>
                 <span title={icon.fileName}>{icon.fileName}</span>
-                <button
-                  className="settings-icon-delete-button"
-                  disabled={disabled || isBusy}
-                  type="button"
-                  onClick={() => deleteLocalIcon(icon.fileName)}
-                >
-                  <Trash2 aria-hidden="true" size={13} />
-                  Delete…
-                </button>
+                <div className="settings-local-icon-actions">
+                  <button
+                    aria-label={`Show ${icon.fileName} in Finder`}
+                    className="settings-icon-reveal-button"
+                    disabled={disabled || isBusy}
+                    title="Show in Finder"
+                    type="button"
+                    onClick={() => showLocalIconInFinder(icon.fileName)}
+                  >
+                    <FolderOpen aria-hidden="true" size={13} />
+                  </button>
+                  <button
+                    className="settings-icon-delete-button"
+                    disabled={disabled || isBusy}
+                    type="button"
+                    onClick={() => deleteLocalIcon(icon.fileName)}
+                  >
+                    <Trash2 aria-hidden="true" size={13} />
+                    Delete…
+                  </button>
+                </div>
               </div>
             ))}
           </div>

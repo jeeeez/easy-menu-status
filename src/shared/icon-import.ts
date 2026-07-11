@@ -33,3 +33,7 @@ export type SettingsLocalIconListResult =
 export type SettingsLocalIconDeleteResult =
   | { ok: true; fileName: string }
   | { ok: false; error: string; canceled?: boolean };
+
+export type SettingsLocalIconRevealResult =
+  | { ok: true; fileName: string }
+  | { ok: false; error: string };

@@ -39,8 +39,7 @@ body[data-page='quick-command'] {
   --quick-command-panel-border-width: 1px;
   --quick-command-panel-radius: 8px;
   --quick-command-panel-shadow: 0 34px 92px rgba(0, 0, 0, 0.42),
-    0 14px 34px rgba(0, 0, 0, 0.28),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    0 14px 34px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.1);
   --quick-command-panel-blur: 34px;
   --quick-command-panel-saturation: 1.2;
   --quick-command-input-background: #f6f2ea;
@@ -176,8 +175,7 @@ a:hover {
   );
   --quick-command-panel-radius: 10px;
   --quick-command-panel-shadow: 0 30px 80px rgba(17, 24, 39, 0.24),
-    0 8px 28px rgba(17, 24, 39, 0.14),
-    inset 0 1px 0 rgba(255, 255, 255, 0.86);
+    0 8px 28px rgba(17, 24, 39, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.86);
   --quick-command-panel-blur: 46px;
   --quick-command-panel-saturation: 1.35;
   --quick-command-input-background: rgba(255, 255, 255, 0.74);
@@ -399,8 +397,7 @@ a:hover {
     rgba(231, 234, 239, 0.91)
   );
   --quick-command-panel-shadow: 0 30px 70px rgba(31, 35, 43, 0.24),
-    0 2px 8px rgba(31, 35, 43, 0.12),
-    inset 0 1px 0 rgba(255, 255, 255, 0.72);
+    0 2px 8px rgba(31, 35, 43, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.72);
   --quick-command-panel-blur: 30px;
   --quick-command-panel-saturation: 1.12;
   --quick-command-input-background: rgba(255, 255, 255, 0.86);
@@ -563,10 +560,13 @@ a:hover {
   --quick-command-accent: #74c7ec;
   --quick-command-accent-strong: #fab387;
   --quick-command-danger: #f38ba8;
-  --quick-command-panel-background: linear-gradient(150deg, #1e1e2ef5, #181825f2);
+  --quick-command-panel-background: linear-gradient(
+    150deg,
+    #1e1e2ef5,
+    #181825f2
+  );
   --quick-command-panel-shadow: 0 30px 78px rgba(17, 17, 27, 0.5),
-    0 10px 26px rgba(17, 17, 27, 0.32),
-    inset 0 1px 0 rgba(205, 214, 244, 0.08);
+    0 10px 26px rgba(17, 17, 27, 0.32), inset 0 1px 0 rgba(205, 214, 244, 0.08);
   --quick-command-panel-blur: 30px;
   --quick-command-panel-saturation: 1.15;
   --quick-command-input-background: #181825;
@@ -614,10 +614,13 @@ a:hover {
   --quick-command-accent: #88c0d0;
   --quick-command-accent-strong: #5e81ac;
   --quick-command-danger: #bf616a;
-  --quick-command-panel-background: linear-gradient(150deg, #2e3440f5, #252b35f2);
+  --quick-command-panel-background: linear-gradient(
+    150deg,
+    #2e3440f5,
+    #252b35f2
+  );
   --quick-command-panel-shadow: 0 30px 76px rgba(20, 24, 31, 0.48),
-    0 10px 24px rgba(20, 24, 31, 0.28),
-    inset 0 1px 0 rgba(236, 239, 244, 0.07);
+    0 10px 24px rgba(20, 24, 31, 0.28), inset 0 1px 0 rgba(236, 239, 244, 0.07);
   --quick-command-panel-blur: 28px;
   --quick-command-panel-saturation: 1.08;
   --quick-command-input-background: #3b4252;
@@ -665,10 +668,13 @@ a:hover {
   --quick-command-accent: #ff79c6;
   --quick-command-accent-strong: #8be9fd;
   --quick-command-danger: #ff5555;
-  --quick-command-panel-background: linear-gradient(145deg, #282a36f7, #20212bf2);
+  --quick-command-panel-background: linear-gradient(
+    145deg,
+    #282a36f7,
+    #20212bf2
+  );
   --quick-command-panel-shadow: 0 30px 78px rgba(17, 17, 23, 0.52),
-    0 10px 26px rgba(17, 17, 23, 0.3),
-    inset 0 1px 0 rgba(248, 248, 242, 0.06);
+    0 10px 26px rgba(17, 17, 23, 0.3), inset 0 1px 0 rgba(248, 248, 242, 0.06);
   --quick-command-panel-blur: 28px;
   --quick-command-panel-saturation: 1.12;
   --quick-command-input-background: #44475a;
@@ -727,7 +733,8 @@ a:hover {
 
 .quick-command-panel--error {
   border-color: var(--quick-command-danger);
-  box-shadow: var(--quick-command-panel-shadow),
+  box-shadow:
+    var(--quick-command-panel-shadow),
     inset 3px 0 0 var(--quick-command-danger);
 }
 
@@ -755,7 +762,8 @@ a:hover {
 .quick-command-input-row:focus-within {
   border-color: var(--quick-command-input-focus-border);
   background: var(--quick-command-input-focus-background);
-  box-shadow: 0 0 0 3px var(--quick-command-input-focus-ring),
+  box-shadow:
+    0 0 0 3px var(--quick-command-input-focus-ring),
     var(--quick-command-input-shadow);
 }
 
@@ -954,6 +962,15 @@ a:hover {
   font-weight: 560;
   line-height: 1.2;
   transition: color var(--quick-command-motion-duration) ease;
+}
+
+.quick-command-match {
+  padding: 0;
+  background: transparent;
+  color: var(--quick-command-accent-strong);
+  font: inherit;
+  font-weight: 760;
+  text-decoration: none;
 }
 
 .quick-command-engine-description {
@@ -1438,8 +1455,12 @@ body[data-page='setting'] #root {
   outline: 0;
   background: #ffffff;
   color: #1c2430;
-  font: 400 13px/1.4 -apple-system, BlinkMacSystemFont, 'SF Pro Text',
-    'Segoe UI', sans-serif;
+  font:
+    400 13px/1.4 -apple-system,
+    BlinkMacSystemFont,
+    'SF Pro Text',
+    'Segoe UI',
+    sans-serif;
   transition:
     border-color 120ms ease,
     box-shadow 120ms ease;
@@ -1751,7 +1772,7 @@ body[data-page='setting'] #root {
 }
 
 .settings-local-icon-manager-header > button,
-.settings-local-icon-row > button {
+.settings-local-icon-actions > button {
   height: 26px;
   display: inline-flex;
   align-items: center;
@@ -1765,6 +1786,19 @@ body[data-page='setting'] #root {
   cursor: default;
   font-size: 10px !important;
   font-weight: 600 !important;
+}
+
+.settings-local-icon-manager-header > button:hover:not(:disabled),
+.settings-local-icon-actions > button:hover:not(:disabled) {
+  border-color: #aeb9c8 !important;
+  background: #f3f6fa !important;
+  color: #1f2b3a !important;
+}
+
+.settings-local-icon-manager-header > button:focus-visible,
+.settings-local-icon-actions > button:focus-visible {
+  outline: 2px solid rgba(45, 108, 223, 0.72);
+  outline-offset: 1px;
 }
 
 .settings-local-icon-list {
@@ -1813,12 +1847,24 @@ body[data-page='setting'] #root {
   object-fit: contain;
 }
 
-.settings-local-icon-row > .settings-icon-delete-button {
+.settings-local-icon-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.settings-local-icon-actions > .settings-icon-reveal-button {
+  width: 26px;
+  padding: 0 !important;
+}
+
+.settings-local-icon-actions > .settings-icon-delete-button {
   border-color: #e1bec2 !important;
   color: #a43a45 !important;
 }
 
-.settings-local-icon-row
+.settings-local-icon-actions
   > .settings-icon-delete-button:hover:not(:disabled) {
   border-color: #d69da4 !important;
   background: #fff3f4 !important;
@@ -2122,10 +2168,9 @@ body[data-page='setting'] #root {
 }
 
 .settings-browser-row {
-  grid-template-columns: minmax(110px, 0.6fr) minmax(110px, 0.65fr) minmax(
-      105px,
-      0.65fr
-    ) minmax(0, 1.45fr) 30px;
+  grid-template-columns:
+    minmax(110px, 0.6fr) minmax(110px, 0.65fr) minmax(105px, 0.65fr)
+    minmax(0, 1.45fr) 30px;
 }
 
 .settings-browser-row input[readonly] {

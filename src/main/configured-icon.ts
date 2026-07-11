@@ -108,6 +108,15 @@ async function getPersistentIconPath(fileName: string) {
   return candidate;
 }
 
+export async function resolvePersistentIconFilePath(fileName: string) {
+  const iconPath = await getPersistentIconPath(fileName);
+  const iconStats = await lstat(iconPath);
+  if (!iconStats.isFile() || iconStats.isSymbolicLink()) {
+    throw new Error('The persistent icon is not a regular file.');
+  }
+  return iconPath;
+}
+
 export async function listPersistentIcons() {
   const directory = await getPersistentIconDirectory();
   const entries = await readdir(directory, { withFileTypes: true });
@@ -123,12 +132,8 @@ export async function listPersistentIcons() {
 }
 
 export async function deletePersistentIcon(fileName: string) {
-  const iconPath = await getPersistentIconPath(fileName);
   try {
-    const iconStats = await lstat(iconPath);
-    if (!iconStats.isFile() || iconStats.isSymbolicLink()) {
-      throw new Error('The persistent icon is not a regular file.');
-    }
+    const iconPath = await resolvePersistentIconFilePath(fileName);
     await unlink(iconPath);
     return true;
   } catch (error) {
@@ -154,13 +159,9 @@ export async function loadPersistentIcon(
   size: { width: number; height: number },
 ) {
   try {
-    const iconPath = await getPersistentIconPath(fileName);
+    const iconPath = await resolvePersistentIconFilePath(fileName);
     const iconStats = await lstat(iconPath);
-    if (
-      !iconStats.isFile() ||
-      iconStats.isSymbolicLink() ||
-      iconStats.size > MAX_PERSISTENT_ICON_PREVIEW_BYTES
-    ) {
+    if (iconStats.size > MAX_PERSISTENT_ICON_PREVIEW_BYTES) {
       return undefined;
     }
     return loadIconFromPath(iconPath, size);

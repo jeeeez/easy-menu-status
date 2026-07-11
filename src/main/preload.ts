@@ -21,6 +21,7 @@ import {
   type SettingsIconImportResult,
   type SettingsLocalIconDeleteResult,
   type SettingsLocalIconListResult,
+  type SettingsLocalIconRevealResult,
   type SettingsIconPreviewResult,
 } from '../shared/icon-import';
 
@@ -35,7 +36,8 @@ export type InvokeChannels =
   | 'settings:import-icon'
   | 'settings:preview-icon'
   | 'settings:list-local-icons'
-  | 'settings:delete-local-icon';
+  | 'settings:delete-local-icon'
+  | 'settings:reveal-local-icon';
 
 function importIcon(request: SettingsIconImportRequest) {
   return ipcRenderer.invoke(
@@ -184,6 +186,12 @@ const electronHandler = {
         'settings:delete-local-icon',
         fileName,
       ) as Promise<SettingsLocalIconDeleteResult>;
+    },
+    revealLocalIcon(fileName: string) {
+      return ipcRenderer.invoke(
+        'settings:reveal-local-icon',
+        fileName,
+      ) as Promise<SettingsLocalIconRevealResult>;
     },
   },
 };

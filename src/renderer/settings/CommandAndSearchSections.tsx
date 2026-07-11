@@ -72,6 +72,7 @@ function CommandEntryEditor({
         />
       </div>
       <IconImportField
+        key={importTargetKey}
         label="Icon"
         options={BUILT_IN_ICON_NAMES}
         placeholder="Built-in name or imported filename"

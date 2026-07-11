@@ -5,6 +5,7 @@ import {
   IpcMainInvokeEvent,
   MessageBoxOptions,
   OpenDialogOptions,
+  shell,
 } from 'electron';
 import {
   copyFileSync,
@@ -15,6 +16,7 @@ import {
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
+import path from 'node:path';
 import stripJsonComments from 'strip-json-comments';
 import {
   EasyTrayEditorConfig,
@@ -27,6 +29,7 @@ import {
   SettingsIconImportResult,
   SettingsLocalIconDeleteResult,
   SettingsLocalIconListResult,
+  SettingsLocalIconRevealResult,
   SettingsIconPreviewResult,
 } from '../shared/icon-import';
 import {
@@ -36,6 +39,7 @@ import {
   listPersistentIcons,
   loadConfiguredIcon,
   loadPersistentIcon,
+  resolvePersistentIconFilePath,
 } from './configured-icon';
 import {
   IconImportError,
@@ -120,6 +124,11 @@ export class SettingsController {
       (event: IpcMainInvokeEvent, fileName: unknown) =>
         this.deleteLocalIcon(event, fileName),
     );
+    ipcMain.handle(
+      'settings:reveal-local-icon',
+      (event: IpcMainInvokeEvent, fileName: unknown) =>
+        this.revealLocalIcon(event, fileName),
+    );
   }
 
   private isTrustedSettingsSender(event: IpcMainInvokeEvent) {
@@ -174,6 +183,8 @@ export class SettingsController {
     event: IpcMainInvokeEvent,
     value: unknown,
   ): Promise<SettingsIconImportResult> {
+    let importSource = 'invalid';
+    let importFileName = '';
     try {
       if (!this.isTrustedSettingsSender(event)) {
         throw new IconImportError('Icon imports must start from Settings.');
@@ -181,12 +192,14 @@ export class SettingsController {
       if (!isIconImportRequest(value)) {
         throw new IconImportError('The icon import request is invalid.');
       }
+      importSource = value.source;
 
       let fileName: string | undefined;
       switch (value.source) {
         case 'picker': {
           const sourcePath = await this.chooseIcon(event);
           if (!sourcePath) return { ok: false, error: '', canceled: true };
+          importFileName = path.basename(sourcePath);
           fileName = await importConfiguredIconFromPath(sourcePath);
           break;
         }
@@ -194,9 +207,11 @@ export class SettingsController {
           fileName = await importConfiguredIconFromClipboard();
           break;
         case 'path':
+          importFileName = path.basename(value.path);
           fileName = await importConfiguredIconFromPath(value.path);
           break;
         case 'bytes':
+          importFileName = path.basename(value.fileName ?? 'web-image');
           fileName = await importConfiguredIconFromBytes(
             value.bytes,
             value.fileName,
@@ -204,6 +219,11 @@ export class SettingsController {
           );
           break;
         case 'url':
+          try {
+            importFileName = path.basename(new URL(value.url).pathname);
+          } catch {
+            importFileName = '';
+          }
           fileName = await importConfiguredIconFromUrl(value.url);
           break;
         default:
@@ -216,7 +236,7 @@ export class SettingsController {
           ? error.message
           : 'The image could not be imported.';
       Logger.error(
-        `Icon import failed (${error instanceof Error ? error.name : 'unknown error'})`,
+        `Icon import failed: source=${importSource}, file=${importFileName || 'unknown'}, message=${message}`,
       );
       return { ok: false, error: message };
     }
@@ -319,6 +339,32 @@ export class SettingsController {
         `Delete local icon failed (${error instanceof Error ? error.name : 'unknown error'})`,
       );
       return { ok: false, error: 'The local icon could not be deleted.' };
+    }
+  }
+
+  private async revealLocalIcon(
+    event: IpcMainInvokeEvent,
+    value: unknown,
+  ): Promise<SettingsLocalIconRevealResult> {
+    if (!this.isTrustedSettingsSender(event)) {
+      return { ok: false, error: 'Local icon reveal denied.' };
+    }
+    if (!isPersistentIconFileName(value)) {
+      return { ok: false, error: 'Select a local icon to show in Finder.' };
+    }
+
+    try {
+      const iconPath = await resolvePersistentIconFilePath(value);
+      shell.showItemInFolder(iconPath);
+      return { ok: true, fileName: value };
+    } catch (error) {
+      Logger.error(
+        `Reveal local icon failed (${error instanceof Error ? error.name : 'unknown error'})`,
+      );
+      return {
+        ok: false,
+        error: 'The local icon could not be shown in Finder.',
+      };
     }
   }
 
