@@ -12,6 +12,8 @@ const APPLICATION_ROOTS = [
 const MAX_SCAN_DEPTH = 3;
 const INDEX_TTL = 5 * 60 * 1000;
 const MAX_SEARCH_RESULTS = 10;
+// App icons render at 34 CSS pixels, so keep a 2x bitmap for Retina displays.
+const APPLICATION_ICON_PIXEL_SIZE = 68;
 
 interface IndexedApplication {
   name: string;
@@ -187,18 +189,23 @@ export class ApplicationSearchService {
       let applicationIcon = iconName
         ? await nativeImage.createThumbnailFromPath(
             path.join(resolvedPath, 'Contents', 'Resources', iconFileName),
-            { width: 32, height: 32 },
+            {
+              width: APPLICATION_ICON_PIXEL_SIZE,
+              height: APPLICATION_ICON_PIXEL_SIZE,
+            },
           )
         : nativeImage.createEmpty();
+      let iconScaleFactor = 1;
       if (applicationIcon.isEmpty()) {
         applicationIcon = await app.getFileIcon(resolvedPath, {
           size: 'normal',
         });
+        if (applicationIcon.getScaleFactors().includes(2)) {
+          iconScaleFactor = 2;
+        }
       }
       if (!applicationIcon.isEmpty()) {
-        icon = applicationIcon
-          .resize({ width: 32, height: 32, quality: 'best' })
-          .toDataURL();
+        icon = applicationIcon.toDataURL({ scaleFactor: iconScaleFactor });
       }
     } catch {
       icon = undefined;

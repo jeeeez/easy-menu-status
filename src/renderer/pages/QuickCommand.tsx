@@ -715,7 +715,7 @@ export function QuickCommandPage() {
                 ? item.application.name
                 : item.command.label;
               const description = isApplication
-                ? 'Application'
+                ? item.application.path
                 : item.command.description;
               const action = isApplication
                 ? 'Open'
@@ -759,7 +759,10 @@ export function QuickCommandPage() {
                   <span className="quick-command-engine-content">
                     <span className="quick-command-engine-label">{label}</span>
                     {description ? (
-                      <small className="quick-command-engine-description">
+                      <small
+                        className="quick-command-engine-description"
+                        title={isApplication ? description : undefined}
+                      >
                         {description}
                       </small>
                     ) : null}
