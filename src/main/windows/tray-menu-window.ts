@@ -23,7 +23,7 @@ export class TrayMenuWindow {
         withPreload: true,
       }).then((window) => {
         this.window = window;
-        window.setTitle('EasyTray Settings');
+        window.setTitle('Tide Settings');
         window.setMinimumSize(900, 620);
         window.setMenuBarVisibility(false);
         window.on('closed', () => {

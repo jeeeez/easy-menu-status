@@ -474,7 +474,7 @@ export class ApplicationSearchService {
       (candidate) => candidate.path === applicationPath,
     );
     if (!application) {
-      throw new Error('Application is not in the EasyTray application index');
+      throw new Error('Application is not in the Tide application index');
     }
 
     const openError = await shell.openPath(application.path);

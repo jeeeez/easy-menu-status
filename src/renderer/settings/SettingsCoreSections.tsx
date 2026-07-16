@@ -1,7 +1,7 @@
 import React from 'react';
 import {
   BUILT_IN_ICON_NAMES,
-  EasyTrayEditorConfig,
+  TideEditorConfig,
   QuickCommandEditorConfig,
 } from '../../shared/config';
 import {
@@ -20,8 +20,8 @@ import {
 } from './SettingsControls';
 
 interface ConfigSectionProps {
-  config: EasyTrayEditorConfig;
-  onChange: (config: EasyTrayEditorConfig) => void;
+  config: TideEditorConfig;
+  onChange: (config: TideEditorConfig) => void;
 }
 
 interface IconConfigSectionProps extends ConfigSectionProps {

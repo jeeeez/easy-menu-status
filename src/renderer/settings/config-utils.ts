@@ -1,7 +1,7 @@
 import {
   BUILT_IN_GOOGLE_WEB_SEARCH_ENGINE,
   BUILT_IN_GOOGLE_WEB_SEARCH_ENGINE_ID,
-  EasyTrayEditorConfig,
+  TideEditorConfig,
   MenuItemEditorConfig,
   WebSearchEngineEditorConfig,
 } from '../../shared/config';
@@ -89,7 +89,7 @@ function normalizeWebSearchEngines(
   ];
 }
 
-export function normalizeEditorConfig(config: EasyTrayEditorConfig) {
+export function normalizeEditorConfig(config: TideEditorConfig) {
   const normalizedConfig = { ...config };
   delete normalizedConfig.linkInterceptor;
   const quickCommand = config.quickCommand ?? {};
@@ -141,7 +141,7 @@ export function normalizeEditorConfig(config: EasyTrayEditorConfig) {
         engines: normalizeWebSearchEngines(webSearch.engines),
       },
     },
-  } satisfies EasyTrayEditorConfig;
+  } satisfies TideEditorConfig;
 }
 
 export function flattenMenuItems(

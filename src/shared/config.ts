@@ -144,7 +144,7 @@ export interface TrayIconEditorConfig {
   [key: string]: unknown;
 }
 
-export interface EasyTrayEditorConfig {
+export interface TideEditorConfig {
   icon?: string | TrayIconEditorConfig;
   title?: string;
   description?: string;
@@ -156,7 +156,7 @@ export interface EasyTrayEditorConfig {
 export interface SettingsConfigSnapshot {
   path: string;
   backupPath: string;
-  config: EasyTrayEditorConfig;
+  config: TideEditorConfig;
 }
 
 export type SettingsConfigResult =

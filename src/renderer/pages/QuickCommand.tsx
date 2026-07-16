@@ -631,7 +631,7 @@ export function QuickCommandPage() {
   const executeInput = React.useCallback(
     async (nextInput: string) => {
       if (!quickCommandBridge) {
-        setError('Commands can only run inside EasyTray');
+        setError('Commands can only run inside Tide');
         return;
       }
       const result = await quickCommandBridge.execute(nextInput);
@@ -787,7 +787,7 @@ export function QuickCommandPage() {
         !quickCommandBridge ||
         typeof quickCommandBridge.openApplication !== 'function'
       ) {
-        setError('Applications can only open inside EasyTray');
+        setError('Applications can only open inside Tide');
         return;
       }
 

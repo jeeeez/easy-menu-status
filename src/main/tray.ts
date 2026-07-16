@@ -9,7 +9,7 @@ import {
 } from 'electron';
 import { execSync } from 'node:child_process';
 import { spawn } from 'child_process';
-import { readFileSync, watchFile } from 'node:fs';
+import { copyFileSync, existsSync, readFileSync, watchFile } from 'node:fs';
 import { resolve } from 'node:path';
 import stripJsonComments from 'strip-json-comments';
 import { WindowManager } from './windows/window-manager';
@@ -68,7 +68,8 @@ interface TrayMenuConfig {
 }
 
 export class TrayController {
-  static PATH = resolve(process.env.HOME ?? '', 'easy-tray.config.json');
+  static PATH = resolve(process.env.HOME ?? '', 'tide.config.json');
+  static LEGACY_PATH = resolve(process.env.HOME ?? '', 'easy-tray.config.json');
   // eslint-disable-next-line no-use-before-define
   private static $instance: TrayController | null = null;
   static instance(): TrayController {
@@ -87,6 +88,7 @@ export class TrayController {
     app
       .whenReady()
       .then(async () => {
+        this.migrateLegacyConfig();
         await this.parseTrayConfig();
         this.createOrUpdateTray();
         watchFile(TrayController.PATH, { interval: 100 }, async () => {
@@ -97,6 +99,16 @@ export class TrayController {
       })
       .catch((error) => Logger.error(error.message));
     app.on('will-quit', () => globalShortcut.unregisterAll());
+  }
+
+  private migrateLegacyConfig() {
+    if (
+      !existsSync(TrayController.PATH) &&
+      existsSync(TrayController.LEGACY_PATH)
+    ) {
+      copyFileSync(TrayController.LEGACY_PATH, TrayController.PATH);
+      Logger.info(`Migrated legacy config: ${TrayController.LEGACY_PATH}`);
+    }
   }
 
   createOrUpdateTray() {

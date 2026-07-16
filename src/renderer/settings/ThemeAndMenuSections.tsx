@@ -8,7 +8,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import {
-  EasyTrayEditorConfig,
+  TideEditorConfig,
   MENU_ITEM_KINDS,
   MenuItemEditorConfig,
   MenuItemKind,
@@ -45,8 +45,8 @@ import {
 } from './config-utils';
 
 interface ConfigSectionProps {
-  config: EasyTrayEditorConfig;
-  onChange: (config: EasyTrayEditorConfig) => void;
+  config: TideEditorConfig;
+  onChange: (config: TideEditorConfig) => void;
 }
 
 const THEME_TOKENS = Object.keys(

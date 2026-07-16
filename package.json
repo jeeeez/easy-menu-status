@@ -1,7 +1,7 @@
 {
-  "name": "easy-menu-status",
+  "name": "tide",
   "version": "1.0.1",
-  "description": "A simple Electron app to show the status of the menu",
+  "description": "A lightweight desktop command center",
   "keywords": [
     "electron",
     "boilerplate",
@@ -132,8 +132,8 @@
     "webpack-merge": "^5.9.0"
   },
   "build": {
-    "productName": "EasyTray",
-    "appId": "org.erb.ElectronReact",
+    "productName": "Tide",
+    "appId": "com.jeffli.tide",
     "asar": true,
     "asarUnpack": "**\\*.{node,dll}",
     "beforePack": ".erb/scripts/rebuild-panel-window.js",

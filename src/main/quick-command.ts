@@ -199,7 +199,7 @@ const SETTINGS_COMMAND: NormalizedQuickCommandCommand = {
   name: 'Settings',
   label: 'Settings',
   aliases: ['preferences', 'config'],
-  description: 'EasyTray preferences',
+  description: 'Tide preferences',
   action: 'open-settings',
   requiresInput: false,
 };

@@ -2,7 +2,7 @@ import React from 'react';
 import {
   BUILT_IN_ICON_NAMES,
   BUILT_IN_GOOGLE_WEB_SEARCH_ENGINE_ID,
-  EasyTrayEditorConfig,
+  TideEditorConfig,
   QUICK_COMMAND_ACTIONS,
   QuickCommandEditorEntry,
   WebSearchEngineEditorConfig,
@@ -25,8 +25,8 @@ import {
 } from './config-utils';
 
 interface ConfigSectionProps {
-  config: EasyTrayEditorConfig;
-  onChange: (config: EasyTrayEditorConfig) => void;
+  config: TideEditorConfig;
+  onChange: (config: TideEditorConfig) => void;
 }
 
 interface IconConfigSectionProps extends ConfigSectionProps {
@@ -132,7 +132,7 @@ function CommandEntryEditor({
           label="Open in"
           options={[
             { label: 'External browser', value: 'external' },
-            { label: 'EasyTray window', value: 'browser-window' },
+            { label: 'Tide window', value: 'browser-window' },
           ]}
           value={entry.openIn ?? 'external'}
           onChange={(openIn) =>
@@ -334,7 +334,7 @@ function SearchEngineEditor({ engine, onChange }: SearchEngineEditorProps) {
           label="Open in"
           options={[
             { label: 'External browser', value: 'external' },
-            { label: 'EasyTray window', value: 'browser-window' },
+            { label: 'Tide window', value: 'browser-window' },
           ]}
           value={engine.openIn ?? 'external'}
           onChange={(openIn) =>

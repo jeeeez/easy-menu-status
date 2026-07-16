@@ -8,14 +8,16 @@ npm start
 
 ## Settings UI
 
-Open Quick Command and run `Settings` to edit `~/easy-tray.config.json`
+Open Quick Command and run `Settings` to edit `~/tide.config.json`
 without changing the file manually. The editor supports General, Quick
 Command, Commands, Open in Browser, Web Search, Tray Menu, and Custom Themes
 settings. Use the Save button or `CommandOrControl+S` to apply changes
 immediately.
 
-Before each save, EasyTray copies the previous configuration to
-`~/easy-tray.config.json.bak` and then replaces the active file atomically.
+Before each save, Tide copies the previous configuration to
+`~/tide.config.json.bak` and then replaces the active file atomically. On the
+first Tide launch, an existing `~/easy-tray.config.json` is copied to the new
+location for compatibility.
 The settings editor writes standard JSON, so comments from the original file
 are not retained after saving.
 
@@ -29,7 +31,7 @@ command, for example:
 g electron globalShortcut
 ```
 
-Add `quickCommand` to `~/easy-tray.config.json` to customize the shortcut,
+Add `quickCommand` to `~/tide.config.json` to customize the shortcut,
 default command, web search engines, and Alfred-style commands:
 
 ```json
@@ -104,7 +106,7 @@ default command, web search engines, and Alfred-style commands:
         "label": "Open Config",
         "description": "Run",
         "action": "execute-command",
-        "command": "open -a Cursor ~/easy-tray.config.json"
+        "command": "open -a Cursor ~/tide.config.json"
       },
       {
         "name": "chrome",
@@ -151,9 +153,11 @@ supporting text below it, the configured `icon` at the left edge, and `action`
 at the right edge. For `copy-value` and `execute-command`, `command` contains
 the local shell command to run.
 
-Custom icon files belong in EasyTray's persistent icon directory. On macOS the
+Custom icon files belong in Tide's persistent icon directory. On macOS the
 fixed location is
-`~/Library/Application Support/easy-menu-status/icons`. This directory is
+`~/Library/Application Support/Tide/icons`. Existing icons from
+`~/Library/Application Support/easy-menu-status/icons` are copied there on
+first use. This directory is
 outside the installed App bundle, so replacing or reinstalling the App does not
 remove it. In Settings, an Icon field can import an image with the Finder
 picker, the Paste Image button, `Command+V` in the drop zone, or a drag from
@@ -177,7 +181,7 @@ Settings import controls keep custom resources persistent and the JSON
 configuration portable. Missing or invalid Quick Command icons fall back to an
 action-specific symbol; the tray uses the bundled default icon.
 
-On macOS, application search is enabled by default. EasyTray indexes apps in
+On macOS, application search is enabled by default. Tide indexes apps in
 `~/Applications`, `/Applications`, and `/System/Applications`, then mixes App
 matches into Quick Command results. Select an App with the arrow keys and press
 `Enter` to open it. Set `quickCommand.appSearch.enabled` to `false` to disable
@@ -252,12 +256,12 @@ action at `http://localhost:1212/?page=quick-command&theme=nord`. Replace
 Supported command actions:
 
 - `web-search`: search with a configured URL.
-- `browser-window`: open a URL inside EasyTray.
+- `browser-window`: open a URL inside Tide.
 - `copy-value`: copy static or generated text to the clipboard.
 - `execute-command`: run a local shell command.
 - `open-in-browser`: open a URL with the browser profile selected by domain.
-- `open-settings`: open the EasyTray settings editor.
-- `quit-app`: quit EasyTray.
+- `open-settings`: open the Tide settings editor.
+- `quit-app`: quit Tide.
 
 When input matches a command by partial command text or alias, the first
 `Enter` completes the canonical command prefix and the next `Enter` executes it.
@@ -271,7 +275,7 @@ for the unencoded input. For `copy-value`, `{{CommandValue}}` is the output of
 `{{CommandValue}}`, the displayed value refreshes every 10 seconds by default;
 set `autoUpdateInterval` in milliseconds to customize it, or `0` to disable
 periodic display refresh. Set `openIn` to `browser-window` on a `web-search`
-command to open results inside EasyTray instead of the default browser.
+command to open results inside Tide instead of the default browser.
 
 For `open-in-browser`, each entry in `openInBrowser.profiles` defines an
 immutable `id`, a display `name`, the Chrome `profileDirectory`, and the browser
@@ -291,7 +295,7 @@ rules. Typing a URL directly into Quick Command and pressing `Enter` also runs
 
 ## System Link Routing
 
-System-level link interception only works when EasyTray is registered as the
+System-level link interception only works when Tide is registered as the
 default handler for `http` and `https`. In `quickCommand.openInBrowser`, enable
 both `interceptSystemLinks` and `registerAsDefaultBrowser`, then package and
 install the app. System links reuse the same `profiles`, `domainProfiles`, and
@@ -308,16 +312,16 @@ install the app. System links reuse the same `profiles`, `domainProfiles`, and
 }
 ```
 
-When enabled, a system click on `app.ringcentral.com` is routed through EasyTray
+When enabled, a system click on `app.ringcentral.com` is routed through Tide
 and opened in Chrome with the matched profile. Links without a matched domain use
 `defaultProfileId`. Development builds skip default-browser registration; use
 the packaged app for real system link interception.
 
-Local file targets are also supported when they reach EasyTray. For example,
+Local file targets are also supported when they reach Tide. For example,
 `chrome /Users/me/Documents/report.html` and a macOS `open-file` event are
-forwarded using the default browser profile. Registering EasyTray as the default
+forwarded using the default browser profile. Registering Tide as the default
 browser only covers `http` and `https`; macOS still chooses handlers for raw files
-by file type, so it does not make EasyTray the default app for every file.
+by file type, so it does not make Tide the default app for every file.
 
 ## Packaging for Production
 

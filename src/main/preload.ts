@@ -11,10 +11,7 @@ import type {
   QuickCommandViewConfig,
 } from './quick-command';
 import type { ApplicationSearchResult } from './application-search';
-import type {
-  EasyTrayEditorConfig,
-  SettingsConfigResult,
-} from '../shared/config';
+import type { TideEditorConfig, SettingsConfigResult } from '../shared/config';
 import {
   SETTINGS_ICON_MAX_INPUT_BYTES,
   type SettingsIconImportRequest,
@@ -123,7 +120,7 @@ const electronHandler = {
         'settings:get-config',
       ) as Promise<SettingsConfigResult>;
     },
-    save(config: EasyTrayEditorConfig) {
+    save(config: TideEditorConfig) {
       return ipcRenderer.invoke(
         'settings:save-config',
         config,

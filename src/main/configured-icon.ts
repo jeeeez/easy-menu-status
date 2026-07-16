@@ -1,4 +1,4 @@
-import { lstat, mkdir, readdir, stat, unlink } from 'node:fs/promises';
+import { cp, lstat, mkdir, readdir, stat, unlink } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import { app, nativeImage, NativeImage } from 'electron';
@@ -22,8 +22,28 @@ export const CONFIGURED_ICON_EXTENSIONS = [
 
 export const DEFAULT_CONFIGURED_ICON_NAME = 'cat';
 const MAX_PERSISTENT_ICON_PREVIEW_BYTES = 5 * 1024 * 1024;
+const PERSISTENT_ICON_DIRECTORY_NAME = 'Tide';
+const LEGACY_PERSISTENT_ICON_DIRECTORY_NAME = 'easy-menu-status';
 
 let persistentIconDirectoryPromise: Promise<string> | null = null;
+
+async function migrateLegacyPersistentIcons(directory: string) {
+  const legacyDirectory = path.join(
+    app.getPath('appData'),
+    LEGACY_PERSISTENT_ICON_DIRECTORY_NAME,
+    'icons',
+  );
+  const legacyStats = await lstat(legacyDirectory).catch(() => null);
+  if (!legacyStats?.isDirectory() || legacyStats.isSymbolicLink()) {
+    return;
+  }
+
+  await cp(legacyDirectory, directory, {
+    recursive: true,
+    force: false,
+    errorOnExist: false,
+  });
+}
 
 function hasControlCharacter(value: string) {
   return Array.from(value).some((character) => {
@@ -42,14 +62,17 @@ export async function getPersistentIconDirectory() {
   if (!persistentIconDirectoryPromise) {
     const directory = path.join(
       app.getPath('appData'),
-      'easy-menu-status',
+      PERSISTENT_ICON_DIRECTORY_NAME,
       'icons',
     );
     persistentIconDirectoryPromise = mkdir(directory, {
       recursive: true,
       mode: 0o700,
     })
-      .then(() => directory)
+      .then(async () => {
+        await migrateLegacyPersistentIcons(directory);
+        return directory;
+      })
       .catch((error) => {
         persistentIconDirectoryPromise = null;
         throw error;

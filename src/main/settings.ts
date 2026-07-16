@@ -19,7 +19,7 @@ import {
 import path from 'node:path';
 import stripJsonComments from 'strip-json-comments';
 import {
-  EasyTrayEditorConfig,
+  TideEditorConfig,
   SettingsConfigResult,
   SettingsConfigSnapshot,
 } from '../shared/config';
@@ -372,7 +372,7 @@ export class SettingsController {
     const source = readFileSync(this.configPath, 'utf8');
     const config = JSON.parse(
       stripJsonComments(source, { trailingCommas: true }),
-    ) as EasyTrayEditorConfig;
+    ) as TideEditorConfig;
 
     if (!isRecord(config)) {
       throw new Error('Configuration root must be an object');

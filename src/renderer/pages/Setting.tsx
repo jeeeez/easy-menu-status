@@ -11,7 +11,7 @@ import {
   Save,
   Settings2,
 } from 'lucide-react';
-import { EasyTrayEditorConfig } from '../../shared/config';
+import { TideEditorConfig } from '../../shared/config';
 import {
   CommandsSettingsSection,
   WebSearchSettingsSection,
@@ -46,13 +46,13 @@ const SETTINGS_SECTIONS = [
   { id: 'themes', label: 'Custom Themes', icon: Palette },
 ] as const;
 
-const PREVIEW_CONFIG: EasyTrayEditorConfig = {
+const PREVIEW_CONFIG: TideEditorConfig = {
   icon: { name: 'cat', width: 24, height: 24 },
-  title: 'EasyTray',
+  title: 'Tide',
   description: 'Command launcher',
   menus: [
     {
-      label: 'Open EasyTray',
+      label: 'Open Tide',
       action: 'browser-window',
       url: 'https://example.com',
       size: 'right',
@@ -128,9 +128,10 @@ export function SettingPage() {
   const settingsBridge = window.electron?.settings;
   const [activeSection, setActiveSection] =
     React.useState<SettingsSectionId>('general');
-  const [config, setConfig] = React.useState<EasyTrayEditorConfig | null>(null);
-  const [savedConfig, setSavedConfig] =
-    React.useState<EasyTrayEditorConfig | null>(null);
+  const [config, setConfig] = React.useState<TideEditorConfig | null>(null);
+  const [savedConfig, setSavedConfig] = React.useState<TideEditorConfig | null>(
+    null,
+  );
   const [configPath, setConfigPath] = React.useState('');
   const [backupPath, setBackupPath] = React.useState('');
   const [configGeneration, setConfigGeneration] = React.useState(0);
@@ -164,7 +165,7 @@ export function SettingPage() {
   }, [settingsBridge]);
 
   React.useEffect(() => {
-    document.title = 'EasyTray Settings';
+    document.title = 'Tide Settings';
     loadConfig();
   }, [loadConfig]);
 
@@ -277,7 +278,7 @@ export function SettingPage() {
           <span className="settings-brand-mark">
             <Settings2 size={18} />
           </span>
-          <strong>EasyTray</strong>
+          <strong>Tide</strong>
         </div>
         <nav aria-label="Settings sections" className="settings-navigation">
           {SETTINGS_SECTIONS.map((section) => {
