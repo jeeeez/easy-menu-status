@@ -578,8 +578,10 @@ export function QuickCommandPage() {
 
   const focusInput = React.useCallback(() => {
     window.requestAnimationFrame(() => {
-      inputRef.current?.focus();
-      inputRef.current?.select();
+      window.requestAnimationFrame(() => {
+        inputRef.current?.focus({ preventScroll: true });
+        inputRef.current?.select();
+      });
     });
   }, []);
 

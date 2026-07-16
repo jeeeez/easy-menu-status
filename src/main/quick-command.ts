@@ -667,6 +667,7 @@ export class QuickCommandController {
     } else {
       quickWindow.focus();
     }
+    quickWindow.webContents.focus();
     quickWindow.webContents.send('quick-command:show', this.getViewConfig());
     this.updateDynamicLabelTimer();
   }
