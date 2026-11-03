@@ -1,5 +1,4 @@
 import path from 'path';
-import nativePanelWindowModule from '@akiflow/electron-panel-window/build/Release/NativeExtension.node';
 import {
   app,
   BrowserWindow,
@@ -31,27 +30,6 @@ import { openUrlInBrowser } from './open-in-browser';
 import { BUILT_IN_GOOGLE_WEB_SEARCH_ENGINE } from '../shared/config';
 import { loadConfiguredIcon } from './configured-icon';
 import { restrictWindowNavigation } from './helpers/window';
-
-const electronPanelWindow =
-  process.platform === 'darwin'
-    ? {
-        makeKeyWindow(window: BrowserWindow) {
-          return nativePanelWindowModule.MakeKeyWindow(
-            window.getNativeWindowHandle(),
-          );
-        },
-        makePanel(window: BrowserWindow) {
-          return nativePanelWindowModule.MakePanel(
-            window.getNativeWindowHandle(),
-          );
-        },
-        makeWindow(window: BrowserWindow) {
-          return nativePanelWindowModule.MakeWindow(
-            window.getNativeWindowHandle(),
-          );
-        },
-      }
-    : null;
 
 type WebSearchOpenTarget = 'external' | 'browser-window';
 type QuickCommandAction =
@@ -571,6 +549,7 @@ export class QuickCommandController {
   private async createWindow() {
     const quickWindow = new BrowserWindow({
       ...this.getWindowBounds(),
+      type: process.platform === 'darwin' ? 'panel' : undefined,
       show: false,
       frame: false,
       transparent: true,
@@ -590,8 +569,6 @@ export class QuickCommandController {
       },
     });
 
-    this.configureWindowForCurrentWorkspace(quickWindow);
-    electronPanelWindow?.makePanel(quickWindow);
     const quickCommandUrl = resolveHtmlPath('index.html?page=quick-command');
     restrictWindowNavigation(quickWindow, quickCommandUrl);
     quickWindow.loadURL(quickCommandUrl);
@@ -601,35 +578,11 @@ export class QuickCommandController {
       this.window = null;
       this.initPromise = null;
     });
-    app.once('before-quit', () => {
-      if (!quickWindow.isDestroyed()) {
-        quickWindow.hide();
-        electronPanelWindow?.makeWindow(quickWindow);
-      }
-    });
     quickWindow.webContents.on('did-finish-load', () => {
       quickWindow.webContents.send('quick-command:show', this.getViewConfig());
     });
     this.window = quickWindow;
     return quickWindow;
-  }
-
-  private configureWindowForCurrentWorkspace(quickWindow: BrowserWindow) {
-    if (electronPanelWindow) {
-      return;
-    }
-
-    quickWindow.setAlwaysOnTop(
-      true,
-      process.platform === 'darwin' ? 'screen-saver' : 'floating',
-    );
-
-    if (process.platform === 'darwin') {
-      quickWindow.setVisibleOnAllWorkspaces(true, {
-        visibleOnFullScreen: true,
-        skipTransformProcessType: true,
-      });
-    }
   }
 
   private getWindowBounds(): Pick<
@@ -659,14 +612,9 @@ export class QuickCommandController {
 
     const quickWindow = await this.initWindow();
     quickWindow.setBounds(this.getWindowBounds());
-    this.configureWindowForCurrentWorkspace(quickWindow);
     quickWindow.showInactive();
     quickWindow.moveTop();
-    if (electronPanelWindow) {
-      electronPanelWindow.makeKeyWindow(quickWindow);
-    } else {
-      quickWindow.focus();
-    }
+    quickWindow.focus();
     quickWindow.webContents.focus();
     quickWindow.webContents.send('quick-command:show', this.getViewConfig());
     this.updateDynamicLabelTimer();

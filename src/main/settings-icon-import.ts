@@ -6,7 +6,7 @@ import { isIP } from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { TextDecoder } from 'node:util';
-import { clipboard, nativeImage, NativeImage } from 'electron';
+import { clipboard, nativeImage, NativeImage, ClipboardItem } from 'electron';
 import { SETTINGS_ICON_MAX_INPUT_BYTES } from '../shared/icon-import';
 import {
   CONFIGURED_ICON_EXTENSIONS,
@@ -854,54 +854,128 @@ export async function importConfiguredIconFromBytes(
   return persistBytes({ bytes, extension, suggestedName: fileName });
 }
 
+function normalizeClipboardFormat(type: string) {
+  const osFormat = /^electron application\/osclipboard;format="([^"]+)"$/i.exec(
+    type,
+  );
+  return (osFormat?.[1] ?? type).toLowerCase();
+}
+
+async function readClipboardBytes(item: ClipboardItem, type: string) {
+  let payload;
+  try {
+    payload = await item.getType(type);
+  } catch {
+    // A clipboard owner may withdraw a representation while it is being read.
+    return undefined;
+  }
+  if (!(payload instanceof Blob) || !payload.size) return undefined;
+  ensureInputSize(payload.size);
+  return Buffer.from(await payload.arrayBuffer());
+}
+
+function importFirstClipboardValue<T>(
+  values: T[],
+  importValue: (value: T) => Promise<string | undefined>,
+) {
+  // Import representations sequentially so only the first match is persisted.
+  return values.reduce<Promise<string | undefined>>(async (previous, value) => {
+    const imported = await previous;
+    return imported ?? importValue(value);
+  }, Promise.resolve(undefined));
+}
+
 export async function importConfiguredIconFromClipboard() {
-  const image = clipboard.readImage();
-  if (!image.isEmpty()) {
-    return persistPng(normalizeImage(image), 'clipboard-icon');
-  }
-
-  const formats = clipboard.availableFormats();
-  const fileUrlFormat = formats.find(
-    (format) => format.toLowerCase() === 'public.file-url',
+  const items = await clipboard.read();
+  const formats = items.flatMap((item) =>
+    item.types.map((type) => ({
+      item,
+      type,
+      format: normalizeClipboardFormat(type),
+    })),
   );
-  if (fileUrlFormat) {
-    try {
-      const fileUrl = new URL(clipboard.read(fileUrlFormat).trim());
-      const sourcePath = fileURLToPath(fileUrl);
-      if (
-        CONFIGURED_ICON_EXTENSIONS.includes(
-          path.extname(sourcePath).toLowerCase(),
-        )
-      ) {
-        return await importConfiguredIconFromPath(sourcePath);
-      }
-    } catch {
-      // Other clipboard representations may still contain the image.
-    }
-  }
-
-  const svgFormat = formats.find((format) =>
-    SVG_CLIPBOARD_FORMATS.has(format.toLowerCase()),
+  const rasterFormats = formats.filter(
+    ({ format }) =>
+      format.startsWith('image/') &&
+      format !== 'image/svg+xml' &&
+      REMOTE_MIME_EXTENSIONS[format],
   );
-  if (svgFormat) {
-    const svgBytes = clipboard.readBuffer(svgFormat);
-    if (svgBytes.length) {
-      return importConfiguredIconFromBytes(
-        svgBytes,
-        'clipboard-icon.svg',
-        'image/svg+xml',
-      );
-    }
-  }
+  const rasterIcon = await importFirstClipboardValue(
+    rasterFormats,
+    async ({ item, type, format }) => {
+      const bytes = await readClipboardBytes(item, type);
+      return bytes
+        ? importConfiguredIconFromBytes(bytes, 'clipboard-icon', format)
+        : undefined;
+    },
+  );
+  if (rasterIcon) return rasterIcon;
 
-  const textBytes = Buffer.from(clipboard.readText(), 'utf8');
-  if (isPotentialSvg(textBytes)) {
-    return importConfiguredIconFromBytes(
-      textBytes,
-      'clipboard-icon.svg',
-      'image/svg+xml',
-    );
-  }
+  const fileUrlFormats = formats.filter(
+    ({ format }) => format === 'text/uri-list' || format === 'public.file-url',
+  );
+  const fileIcon = await importFirstClipboardValue(
+    fileUrlFormats,
+    async ({ item, type }) => {
+      const bytes = await readClipboardBytes(item, type);
+      if (!bytes) return undefined;
+      const fileUrls = bytes
+        .toString('utf8')
+        .split(/\r?\n/)
+        .map((value) => value.trim())
+        .filter((value) => value && !value.startsWith('#'));
+      return importFirstClipboardValue(fileUrls, async (fileUrl) => {
+        try {
+          const sourcePath = fileURLToPath(new URL(fileUrl));
+          if (
+            CONFIGURED_ICON_EXTENSIONS.includes(
+              path.extname(sourcePath).toLowerCase(),
+            )
+          ) {
+            return await importConfiguredIconFromPath(sourcePath);
+          }
+        } catch {
+          // Other clipboard representations may still contain the image.
+        }
+        return undefined;
+      });
+    },
+  );
+  if (fileIcon) return fileIcon;
+
+  const svgFormats = formats.filter(({ format }) =>
+    SVG_CLIPBOARD_FORMATS.has(format),
+  );
+  const svgIcon = await importFirstClipboardValue(
+    svgFormats,
+    async ({ item, type }) => {
+      const bytes = await readClipboardBytes(item, type);
+      return bytes
+        ? importConfiguredIconFromBytes(
+            bytes,
+            'clipboard-icon.svg',
+            'image/svg+xml',
+          )
+        : undefined;
+    },
+  );
+  if (svgIcon) return svgIcon;
+
+  const textFormats = formats.filter(({ format }) => format === 'text/plain');
+  const textIcon = await importFirstClipboardValue(
+    textFormats,
+    async ({ item, type }) => {
+      const bytes = await readClipboardBytes(item, type);
+      return bytes && isPotentialSvg(bytes)
+        ? importConfiguredIconFromBytes(
+            bytes,
+            'clipboard-icon.svg',
+            'image/svg+xml',
+          )
+        : undefined;
+    },
+  );
+  if (textIcon) return textIcon;
   throw new IconImportError('The clipboard does not contain an image.');
 }
 

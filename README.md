@@ -1,5 +1,7 @@
 ## Starting Development
 
+Use Node.js 22.12.0 or newer for Electron 45 tooling.
+
 Start the app in the `dev` environment:
 
 ```bash

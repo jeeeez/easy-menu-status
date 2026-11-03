@@ -19,10 +19,9 @@ export function restrictWindowNavigation(
 ) {
   const normalizedAllowedUrl = normalizeAllowedNavigationUrl(allowedUrl);
   const preventUnexpectedNavigation = (
-    event: ElectronEvent,
-    navigationUrl: string,
+    event: ElectronEvent<{ url: string }>,
   ) => {
-    if (normalizeAllowedNavigationUrl(navigationUrl) !== normalizedAllowedUrl) {
+    if (normalizeAllowedNavigationUrl(event.url) !== normalizedAllowedUrl) {
       event.preventDefault();
     }
   };

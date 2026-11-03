@@ -32,13 +32,11 @@
     "build:main": "cross-env NODE_ENV=production TS_NODE_TRANSPILE_ONLY=true webpack --config ./.erb/configs/webpack.config.main.prod.ts",
     "build:preload": "cross-env NODE_ENV=development TS_NODE_TRANSPILE_ONLY=true webpack --config ./.erb/configs/webpack.config.preload.dev.ts",
     "build:renderer": "cross-env NODE_ENV=production TS_NODE_TRANSPILE_ONLY=true webpack --config ./.erb/configs/webpack.config.renderer.prod.ts",
-    "postinstall": "npm --prefix release/app install --ignore-scripts && npm run patch:panel-window && ts-node .erb/scripts/check-native-dep.js && npm run rebuild:panel-window && npm run build:dll",
+    "postinstall": "npm --prefix release/app install --ignore-scripts && ts-node .erb/scripts/check-native-dep.js && npm run build:dll",
     "lint": "cross-env NODE_ENV=development eslint . --ext .js,.jsx,.ts,.tsx",
     "lint:fix": "cross-env NODE_ENV=development eslint . --ext .js,.jsx,.ts,.tsx --fix",
     "package": "ts-node ./.erb/scripts/clean.js dist && npm run build && electron-builder build --publish never && npm run build:dll",
-    "patch:panel-window": "node .erb/scripts/patch-panel-window.js",
     "rebuild": "electron-rebuild --parallel --types prod,dev,optional --module-dir release/app",
-    "rebuild:panel-window": "npm run patch:panel-window && node-gyp rebuild --directory=release/app/node_modules/@akiflow/electron-panel-window --target=$(node -p \"require('electron/package.json').version\") --arch=$(node -p \"process.arch\") --dist-url=https://electronjs.org/headers",
     "prestart": "cross-env NODE_ENV=development TS_NODE_TRANSPILE_ONLY=true webpack --config ./.erb/configs/webpack.config.main.dev.ts",
     "start": "ts-node ./.erb/scripts/check-port-in-use.js && npm run prestart && npm run start:renderer",
     "start:main": "concurrently -k \"cross-env NODE_ENV=development TS_NODE_TRANSPILE_ONLY=true webpack --watch --config ./.erb/configs/webpack.config.main.dev.ts\" \"electronmon .\"",
@@ -92,7 +90,7 @@
     "css-loader": "^6.8.1",
     "css-minimizer-webpack-plugin": "^5.0.1",
     "detect-port": "^1.5.1",
-    "electron": "^31.3.0",
+    "electron": "^45.1.0",
     "electron-builder": "^24.13.3",
     "electron-devtools-installer": "^3.2.0",
     "electronmon": "^2.0.2",
@@ -112,7 +110,6 @@
     "file-loader": "^6.2.0",
     "html-webpack-plugin": "^5.5.3",
     "mini-css-extract-plugin": "^2.7.6",
-    "node-gyp": "^11.5.0",
     "prettier": "^3.0.3",
     "react-refresh": "^0.14.0",
     "rimraf": "^5.0.1",
@@ -136,7 +133,6 @@
     "appId": "com.jeffli.tide",
     "asar": true,
     "asarUnpack": "**\\*.{node,dll}",
-    "beforePack": ".erb/scripts/rebuild-panel-window.js",
     "npmRebuild": false,
     "protocols": [
       {
@@ -209,7 +205,7 @@
   "devEngines": {
     "runtime": {
       "name": "node",
-      "version": ">=14.x",
+      "version": ">=22.12.0",
       "onFail": "error"
     },
     "packageManager": {
